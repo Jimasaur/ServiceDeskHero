@@ -1,0 +1,142 @@
+/* ============================================================
+   base.css — CSS custom properties, resets, typography
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap");
+
+:root {
+  /* Color Palette */
+  --bg-deep: #060414;
+  --bg-mid: #0d0b24;
+  --bg-surface: #13113a;
+  --panel-bg: rgba(18, 16, 50, 0.85);
+  --panel-border: rgba(255, 255, 255, 0.07);
+  --panel-glow: rgba(100, 80, 255, 0.12);
+
+  /* Accent colors */
+  --gold: #ffc94b;
+  --gold-bright: #ffe689;
+  --gold-dark: #c58200;
+  --purple: #7c5cfc;
+  --purple-light: #a78bfa;
+  --blue: #3b82f6;
+  --cyan: #22d3ee;
+  --green: #4ade80;
+  --red: #f87171;
+  --orange: #fb923c;
+
+  /* Text */
+  --text: #f0efff;
+  --text-dim: #9ea5d1;
+  --text-muted: #5c6399;
+
+  /* Rarity colors */
+  --rarity-common: #9ea5d1;
+  --rarity-uncommon: #4ade80;
+  --rarity-rare: #3b82f6;
+  --rarity-epic: #a78bfa;
+  --rarity-legendary: #ffc94b;
+
+  /* UI */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --transition: 0.2s ease;
+  --font: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg-deep);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  /* Animated starfield background */
+  background-image:
+    radial-gradient(
+      ellipse at 20% 20%,
+      rgba(124, 92, 252, 0.15) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 80% 80%,
+      rgba(59, 130, 246, 0.1) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 50% 0%,
+      rgba(255, 201, 75, 0.06) 0%,
+      transparent 40%
+    );
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-mid);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--purple);
+  border-radius: 3px;
+}
+
+/* Focus */
+:focus-visible {
+  outline: 2px solid var(--purple-light);
+  outline-offset: 2px;
+}
+
+h1 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 12px;
+}
+h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+p {
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+button {
+  font-family: var(--font);
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.hidden {
+  display: none !important;
+}

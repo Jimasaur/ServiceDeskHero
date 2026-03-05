@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Service Desk Hero — Chuck Sterling's Rise to CIO</title>
+    <meta
+      name="description"
+      content="Click, automate, and climb the IT ladder from Help Desk Analyst to CIO in this addicting idle clicker game."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/layout.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/animations.css" />
+  </head>
+  <body>
+    <!-- ========== HEADER ========== -->
+    <header id="game-header">
+      <div class="header-left">
+        <span class="game-logo">🖥️ Service Desk Hero</span>
+      </div>
+      <div class="header-center">
+        <span class="career-title-label">Current Title:</span>
+        <span id="career-title" class="career-title-value"
+          >Help Desk Analyst</span
+        >
+        <div class="career-progress-wrap">
+          <div id="career-progress-bar" class="career-progress-bar"></div>
+        </div>
+      </div>
+      <div class="header-right">
+        <span id="save-indicator" class="save-indicator">💾 Saved</span>
+        <button id="btn-save" class="btn-hdr">Save</button>
+        <button id="btn-reset" class="btn-hdr btn-danger">Reset</button>
+      </div>
+    </header>
+
+    <!-- ========== INCIDENT BANNER ========== -->
+    <div id="incident-banner" class="incident-banner hidden">
+      <div class="incident-inner">
+        <span id="incident-icon" class="incident-icon">🚨</span>
+        <span id="incident-text" class="incident-text"></span>
+        <button id="incident-resolve" class="btn-incident">RESPOND NOW</button>
+        <span id="incident-timer" class="incident-timer"></span>
+      </div>
+    </div>
+
+    <!-- ========== MAIN LAYOUT ========== -->
+    <main id="game-main">
+      <!-- ===== LEFT PANEL: Avatar + Clicker + Stats ===== -->
+      <aside id="left-panel">
+        <div class="panel avatar-panel">
+          <div id="avatar" class="avatar">
+            <span class="avatar-initials">CS</span>
+            <div class="avatar-ring"></div>
+            <div id="click-burst" class="click-burst"></div>
+          </div>
+          <div class="hero-info">
+            <h1 id="hero-name">Chuck Sterling</h1>
+            <div class="xp-bar-wrap">
+              <div id="xp-bar" class="xp-bar"></div>
+              <span id="xp-label" class="xp-label">0 / 100 XP</span>
+            </div>
+            <div class="level-badge">Lvl <span id="hero-level">1</span></div>
+          </div>
+        </div>
+
+        <div class="panel clicker-panel">
+          <div class="combo-area">
+            <div id="combo-meter" class="combo-meter hidden">
+              <span class="combo-label">COMBO</span>
+              <span id="combo-count">x1</span>
+            </div>
+          </div>
+          <button id="main-clicker" class="main-clicker-btn">
+            <span class="btn-icon">🎫</span>
+            <span class="btn-text">Resolve Ticket</span>
+            <span id="click-power-label" class="click-power">+1 ticket</span>
+          </button>
+          <div class="clicker-stats">
+            <div class="stat-row">
+              <span>Tickets Resolved</span
+              ><strong id="tickets-display">0</strong>
+            </div>
+            <div class="stat-row">
+              <span>Lifetime Tickets</span
+              ><strong id="lifetime-display">0</strong>
+            </div>
+            <div class="stat-row">
+              <span>Per Click</span><strong id="per-click-display">1</strong>
+            </div>
+            <div class="stat-row">
+              <span>Per Second</span><strong id="per-sec-display">0</strong>
+            </div>
+            <div class="stat-row">
+              <span>Per Minute</span><strong id="per-min-display">0</strong>
+            </div>
+            <div class="stat-row prestige-row">
+              <span>🏆 Promotions</span><strong id="prestige-display">0</strong>
+            </div>
+            <div class="stat-row prestige-row">
+              <span>⚡ Prestige Bonus</span
+              ><strong id="prestige-bonus-display">×1.0</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel promotion-panel" id="promotion-panel">
+          <h2 class="promo-title">🚀 Promotion Ready!</h2>
+          <p id="promo-description" class="promo-desc"></p>
+          <button id="btn-promote" class="btn-promote">Accept Promotion</button>
+        </div>
+      </aside>
+
+      <!-- ===== CENTER PANEL: Tabbed Content ===== -->
+      <section id="center-panel">
+        <!-- Tab Nav -->
+        <div class="tab-nav">
+          <button class="tab-btn active" data-tab="squad">👥 Squad</button>
+          <button class="tab-btn" data-tab="upgrades">🛒 Upgrades</button>
+          <button class="tab-btn" data-tab="skills">🧠 Skills</button>
+          <button class="tab-btn" data-tab="achievements">
+            🏅 Achievements
+          </button>
+        </div>
+
+        <!-- ── SQUAD TAB ── -->
+        <div class="tab-pane active" id="tab-squad">
+          <div class="tab-header">
+            <h2>Your Squad</h2>
+            <p class="tab-desc">
+              Dispatch specialized IT heroes to auto-resolve tickets. Each hero
+              levels up and earns bonuses for your whole team.
+            </p>
+          </div>
+          <div id="squad-roster" class="squad-roster"></div>
+
+          <div class="squad-bench-header">
+            <h3>Available Recruits</h3>
+            <p class="tab-desc">
+              Hire new heroes to expand your dispatch capability.
+            </p>
+          </div>
+          <div id="recruit-roster" class="recruit-roster"></div>
+        </div>
+
+        <!-- ── UPGRADES TAB ── -->
+        <div class="tab-pane" id="tab-upgrades">
+          <div class="tab-header">
+            <h2>Command Center Upgrades</h2>
+            <p class="tab-desc">
+              Invest in tools, automation, and infrastructure. Costs scale 18%
+              per purchase.
+            </p>
+          </div>
+          <div id="upgrades-list" class="upgrades-list"></div>
+        </div>
+
+        <!-- ── SKILLS TAB ── -->
+        <div class="tab-pane" id="tab-skills">
+          <div class="tab-header">
+            <h2>Skill Tree</h2>
+            <p class="tab-desc">
+              Spend Skill Points (earned on level-up) to unlock permanent
+              abilities.
+              <span id="skill-points-label" class="skill-pts"
+                >0 SP available</span
+              >
+            </p>
+          </div>
+          <div id="skill-tree" class="skill-tree"></div>
+        </div>
+
+        <!-- ── ACHIEVEMENTS TAB ── -->
+        <div class="tab-pane" id="tab-achievements">
+          <div class="tab-header">
+            <h2>Achievements</h2>
+            <p class="tab-desc">
+              Milestones that permanently boost your stats.
+            </p>
+          </div>
+          <div id="achievements-grid" class="achievements-grid"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ========== TOAST AREA ========== -->
+    <div id="toast-area" class="toast-area" aria-live="polite"></div>
+
+    <!-- ========== FLOATING CLICK NUMBERS ========== -->
+    <div id="float-layer" class="float-layer"></div>
+
+    <!-- ========== DISPATCH MODAL ========== -->
+  <div id="dispatch-modal" class="dispatch-modal hidden">
+    <div class="dispatch-overlay" id="dispatch-overlay"></div>
+    <div class="dispatch-panel">
+      <div class="dispatch-header">
+        <span id="dispatch-inc-icon" class="dispatch-inc-icon">🚨</span>
+        <div class="dispatch-inc-info">
+          <h2 id="dispatch-inc-title">CRITICAL INCIDENT</h2>
+          <p id="dispatch-inc-text"></p>
+        </div>
+        <div class="dispatch-countdown">
+          <span id="dispatch-countdown-num">30</span>
+          <small>seconds</small>
+        </div>
+      </div>
+      <div class="dispatch-skills-needed">
+        <span class="dispatch-skills-label">🎯 Best Skills:</span>
+        <div id="dispatch-required-skills" class="dispatch-skills-row"></div>
+      </div>
+      <div id="dispatch-hero-list" class="dispatch-hero-list"></div>
+      <div class="dispatch-footer">
+        <span class="dispatch-footer-note">Perfect match = 3× reward &bull; Good match = 2× &bull; Any hero helps</span>
+        <button id="dispatch-self-btn" class="btn-dispatch-self">⚡ Handle Myself</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== HANDLE MYSELF MINIGAME MODAL ========== -->
+  <div id="minigame-modal" class="minigame-modal hidden">
+    <div class="minigame-overlay"></div>
+    <div class="minigame-panel" id="minigame-panel">
+      <!-- Active minigame -->
+      <div id="minigame-active">
+        <span id="minigame-icon" class="minigame-icon">🚨</span>
+        <div id="minigame-title" class="minigame-title">HANDLE IT YOURSELF</div>
+        <div id="minigame-subtitle" class="minigame-subtitle">Mash the button! Fill the bar before time runs out!</div>
+
+        <div class="minigame-timer-row">
+          <span>Response Progress</span>
+          <span id="minigame-timer" class="minigame-timer-val">15s</span>
+        </div>
+
+        <div class="minigame-bar-wrap">
+          <div id="minigame-bar" class="minigame-bar"></div>
+          <div id="minigame-bar-label" class="minigame-bar-label">0%</div>
+        </div>
+
+        <button id="btn-minigame-click" class="btn-minigame-click">
+          <span class="minigame-click-label">💻<br>RESOLVE!</span>
+        </button>
+
+        <div id="minigame-click-counter" class="minigame-clicks-counter">Clicks: <strong>0</strong></div>
+        <div id="minigame-reward-preview" class="minigame-reward-preview">Reward: <strong>calculating...</strong></div>
+
+        <button id="btn-minigame-resolve" class="btn-minigame-resolve hidden">✅ RESOLVED! Collect Reward</button>
+      </div>
+      <!-- Result screen -->
+      <div id="minigame-result" class="minigame-result hidden">
+        <span id="minigame-result-emoji" class="minigame-result-emoji">🎉</span>
+        <div id="minigame-result-title" class="minigame-result-title success">INCIDENT RESOLVED!</div>
+        <div id="minigame-result-reward" class="minigame-result-reward">+0 tickets</div>
+        <button id="btn-minigame-close" class="btn-dispatch-self" style="margin-top:16px;width:100%;">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== JS MODULES ========== -->
+  <script type="module" src="js/constants.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
