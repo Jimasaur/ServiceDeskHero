@@ -193,6 +193,9 @@
               <span>⚡ Prestige Bonus</span
               ><strong id="prestige-bonus-display">×1.0</strong>
             </div>
+            <div class="stat-row prestige-row" id="office-upgrades-row" style="display:none;">
+              <span>🪑 Office Upgrades</span><strong id="office-upgrades-display">0</strong>
+            </div>
             <div class="stat-row strikes-row" id="strikes-row" style="color:var(--red); display:none; border-top:1px solid rgba(248,113,113,0.3); padding-top:8px; margin-top:8px;">
               <span>❌ Strikes</span><strong id="strikes-display">0 / 3</strong>
             </div>
@@ -408,6 +411,16 @@
       </div>
     </div>
 
+    <!-- ========== OFFICE INTERLUDE MODAL ========== -->
+    <div id="office-interlude-modal" class="help-modal hidden">
+      <div class="help-overlay"></div>
+      <div class="help-panel office-interlude-panel">
+        <h2>🏢 Promotion Interlude</h2>
+        <p class="help-lead">New title. New furniture. Pick one permanent office upgrade before the next round of nonsense begins.</p>
+        <div id="office-choice-list" class="office-choice-list"></div>
+      </div>
+    </div>
+
     <!-- ========== FIRED MODAL ========== -->
     <div id="fired-modal" class="help-modal hidden">
       <div class="help-overlay"></div>
@@ -445,6 +458,13 @@
       <div class="dispatch-skills-needed">
         <span class="dispatch-skills-label">🎯 Best Skills:</span>
         <div id="dispatch-required-skills" class="dispatch-skills-row"></div>
+      </div>
+      <div id="dispatch-briefing" class="dispatch-briefing">
+        <div id="dispatch-briefing-chips" class="dispatch-briefing-chips"></div>
+        <div class="dispatch-recommendation">
+          <div class="dispatch-recommendation-label">Recommended responder</div>
+          <div id="dispatch-recommendation-text" class="dispatch-recommendation-text">Scanning the squad for the least terrible option...</div>
+        </div>
       </div>
       <div id="dispatch-hero-list" class="dispatch-hero-list"></div>
       <div class="dispatch-footer">

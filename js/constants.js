@@ -58,6 +58,15 @@ window.GAME_DATA = (() => {
     { id: "cio_vision",   name: "CIO Vision",       icon: "👁️‍🗨️", cost: 5, row: 3, col: 2, requires: ["automation_ai","prestige_plus"], desc: "All production ×2.", effect: { globalMult: 2.0 } },
   ];
 
+  const OFFICE_UPGRADES = [
+    { id: "better_chair", icon: "🪑", name: "Better Chair", desc: "Chuck's lumbar support finally enters the chat.", effectText: "+3 tickets/click forever", effect: { perClick: 3 } },
+    { id: "espresso_machine", icon: "☕", name: "Espresso Machine", desc: "Turns existential dread into throughput.", effectText: "+8 tickets/sec forever", effect: { perSec: 8 } },
+    { id: "dual_monitors_office", icon: "🖥️", name: "Executive Monitors", desc: "More dashboards. More confidence. Same root cause.", effectText: "+12% click power forever", effect: { clickMult: 0.12 } },
+    { id: "private_office", icon: "🚪", name: "Private Office", desc: "Less interruption, more quiet plotting.", effectText: "+15% all production forever", effect: { globalMult: 0.15 } },
+    { id: "executive_assistant", icon: "📅", name: "Executive Assistant", desc: "Filters nonsense before it becomes your problem.", effectText: "+20% XP forever", effect: { xpMult: 0.20 } },
+    { id: "budget_authority", icon: "💳", name: "Budget Authority", desc: "Miraculously, crises resolve faster when money appears.", effectText: "+25% incident rewards forever", effect: { incidentRewardMult: 0.25 } },
+  ];
+
   // ── Incidents — 18 total, from clerical to highly technical ──
   const INCIDENTS = [
     // ── Highly Technical ──────────────────────────────────────────
@@ -245,5 +254,5 @@ window.GAME_DATA = (() => {
     },
   ];
 
-  return { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES };
+  return { CAREER, UPGRADES, HEROES, SKILLS, OFFICE_UPGRADES, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES };
 })();

@@ -4,7 +4,7 @@
    ============================================================ */
 
 // ── Wait for constants.js to populate window.GAME_DATA ──
-const { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES } = window.GAME_DATA;
+const { CAREER, UPGRADES, HEROES, SKILLS, OFFICE_UPGRADES, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES } = window.GAME_DATA;
 const SFX = window.SFX;
 const FEEDBACK_ENDPOINT = 'https://xthqp43m7fbaunjuvalsg5qgdm0ooggz.lambda-url.us-east-1.on.aws/';
 
@@ -27,6 +27,8 @@ function buildDefaultState() {
     careerTier: 0,
     prestiges: 0,
     prestigeMultiplier: 1.0,
+    officePerksChosen: [],
+    officeDraftChoices: [],
     // Difficulty & balancing controls
     difficultyId: 'medium',
     strikes: 0,
@@ -92,6 +94,14 @@ function buildDefaultState() {
       prestigeMult: 0,
       skillPoints: 0,
     },
+    officeMods: {
+      perClick: 0,
+      perSec: 0,
+      clickMult: 0,
+      xpMult: 0,
+      globalMult: 0,
+      incidentRewardMult: 0,
+    },
     // Timestamps
     lastSave: Date.now(),
     lastTick: Date.now(),
@@ -119,6 +129,47 @@ function fmtDecimal(n, d = 1) {
 
 function getDifficulty() {
   return DIFFICULTY_MODES.find((d) => d.id === S.difficultyId) || DIFFICULTY_MODES.find((d) => d.id === 'medium') || DIFFICULTY_MODES[0];
+}
+
+function recalcOfficeMods() {
+  const totals = {
+    perClick: 0,
+    perSec: 0,
+    clickMult: 0,
+    xpMult: 0,
+    globalMult: 0,
+    incidentRewardMult: 0,
+  };
+
+  (S.officePerksChosen || []).forEach(id => {
+    const perk = OFFICE_UPGRADES.find(x => x.id === id);
+    if (!perk || !perk.effect) return;
+    Object.entries(perk.effect).forEach(([key, value]) => {
+      totals[key] = (totals[key] || 0) + value;
+    });
+  });
+
+  S.officeMods = totals;
+}
+
+function rollOfficeDraftChoices() {
+  const pool = OFFICE_UPGRADES.filter(perk => !(S.officePerksChosen || []).includes(perk.id));
+  if (pool.length === 0) {
+    S.officeDraftChoices = [];
+    return [];
+  }
+
+  const picks = [...pool]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, Math.min(3, pool.length))
+    .map(perk => perk.id);
+
+  S.officeDraftChoices = picks;
+  return picks;
+}
+
+function getIncidentRewardMultiplier() {
+  return 1 + (S.officeMods?.incidentRewardMult || 0);
 }
 
 function dampenBonus(sum) {
@@ -334,17 +385,19 @@ function calcPerClick() {
   if (S.clockedOut) return 0;
   const sm = S.skillMods;
   const am = S.achMods;
+  const om = S.officeMods || {};
   const diff = getDifficulty();
   const restedBonus = Date.now() < (S.restedBuffUntil || 0) ? 1.15 : 1;
-  const base = S.basePerClick + sm.perClick + am.perClick;
-  const clickMult = 1 + sm.critChance + am.clickMult;
-  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier * restedBonus;
+  const base = S.basePerClick + sm.perClick + am.perClick + (om.perClick || 0);
+  const clickMult = 1 + sm.critChance + am.clickMult + (om.clickMult || 0);
+  const global = (1 + dampenBonus(sm.globalMult + am.globalMult + (om.globalMult || 0))) * diff.incomeMultiplier * S.prestigeMultiplier * restedBonus;
   return Math.max(1, applySoftCap(base * clickMult * global, 120, 0.88));
 }
 
 function calcPerSec() {
   const sm = S.skillMods;
   const am = S.achMods;
+  const om = S.officeMods || {};
   const diff = getDifficulty();
   const restedBonus = Date.now() < (S.restedBuffUntil || 0) ? 1.15 : 1;
   const offShiftPenalty = S.clockedOut ? 0.6 : 1;
@@ -367,16 +420,16 @@ function calcPerSec() {
   upgradePs = applySoftCap(upgradePs, 180, 0.82);
   squadPs *= (1 + sm.squadMult + am.squadMult);
 
-  const flat = sm.perSec + am.perSec;
+  const flat = sm.perSec + am.perSec + (om.perSec || 0);
   const psMult = 1 + sm.perSecMult;
   const squadBonus = 1 + dampenBonus(sm.squadMult + am.squadMult);
-  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier * restedBonus;
+  const global = (1 + dampenBonus(sm.globalMult + am.globalMult + (om.globalMult || 0))) * diff.incomeMultiplier * S.prestigeMultiplier * restedBonus;
   return applySoftCap((upgradePs + squadPs + flat) * psMult * squadBonus * global * offShiftPenalty, 220, 0.8);
 }
 
 function calcXpGain(tickets) {
   const base = tickets * 0.1;
-  const mult = 1 + S.skillMods.xpMult;
+  const mult = 1 + S.skillMods.xpMult + (S.officeMods?.xpMult || 0);
   // Sam Voss xpBoost
   const samBoost = (S.heroState['sam'] && S.heroState['sam'].owned) ? 1.5 : 1;
   return base * mult * samBoost * (getDifficulty().xpMultiplier || 1);
@@ -964,6 +1017,52 @@ function checkPromotionReady() {
   }
 }
 
+function renderOfficeInterlude() {
+  const modal = document.getElementById('office-interlude-modal');
+  const list = document.getElementById('office-choice-list');
+  if (!modal || !list) return;
+
+  const picks = (S.officeDraftChoices || []).length ? S.officeDraftChoices : rollOfficeDraftChoices();
+  if (!picks.length) {
+    modal.classList.add('hidden');
+    return;
+  }
+
+  list.innerHTML = picks.map(id => {
+    const perk = OFFICE_UPGRADES.find(x => x.id === id);
+    if (!perk) return '';
+    return `
+      <button class="office-choice-card" data-office-perk="${perk.id}">
+        <span class="office-choice-icon">${perk.icon}</span>
+        <div class="office-choice-content">
+          <strong>${perk.name}</strong>
+          <span>${perk.desc}</span>
+          <small>${perk.effectText}</small>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  list.querySelectorAll('[data-office-perk]').forEach(btn => {
+    btn.addEventListener('click', () => chooseOfficePerk(btn.dataset.officePerk));
+  });
+
+  modal.classList.remove('hidden');
+}
+
+function chooseOfficePerk(perkId) {
+  if ((S.officePerksChosen || []).includes(perkId)) return;
+  const perk = OFFICE_UPGRADES.find(x => x.id === perkId);
+  if (!perk) return;
+
+  S.officePerksChosen = [...(S.officePerksChosen || []), perkId];
+  S.officeDraftChoices = [];
+  recalcOfficeMods();
+  document.getElementById('office-interlude-modal').classList.add('hidden');
+  toast(`${perk.icon} Office upgrade secured: ${perk.name}. ${perk.effectText}`, 'gold');
+  renderAll();
+}
+
 function doPromotion() {
   const nextTier = CAREER[S.careerTier + 1];
   if (!nextTier) return;
@@ -983,6 +1082,7 @@ function doPromotion() {
   S.basePerSec = 0;
   reapplyAllSkills();
   reapplyAllAchievements();
+  recalcOfficeMods();
   SFX.promotion();
   toast(`🚀 PROMOTED to ${nextTier.icon} ${nextTier.title}! Bonus: ×${nextTier.prestigeBonus}`, 'gold');
   toast(`📣 New title, same chaos. Enjoy your fresh badge and expanded blast radius.`, 'gold');
@@ -990,6 +1090,10 @@ function doPromotion() {
     toast('🏆 YOU ARE THE CIO! The ultimate achievement unlocked!', 'gold');
   }
   document.getElementById('promotion-panel').classList.add('hidden');
+  if ((S.officePerksChosen || []).length < OFFICE_UPGRADES.length) {
+    rollOfficeDraftChoices();
+    renderOfficeInterlude();
+  }
   renderAll();
 }
 
@@ -1085,7 +1189,7 @@ function triggerIncident() {
   activeIncident = { ...inc, timeLeft: inc.timeLimit };
   const banner = document.getElementById('incident-banner');
   const sev = getIncidentSeverity(inc);
-  const previewReward = Math.max(Math.floor(calcPerSec() * inc.rewardMult * 10), 500);
+  const previewReward = Math.max(Math.floor(calcPerSec() * inc.rewardMult * 10 * getIncidentRewardMultiplier()), 500);
   const commentary = getIncidentCommentary(inc);
   document.getElementById('incident-icon').textContent = inc.icon;
   document.getElementById('incident-severity').textContent = sev.label;
@@ -1136,6 +1240,53 @@ function calcSkillMatch(hero, incident) {
   return                     { label: '⚠️ Out of Element', cls: 'weak', mult: 0.6 };
 }
 
+function getDispatchCardData(hero, incident) {
+  const hs = S.heroState[hero.id] || { status: 'Active', morale: 100, level: 1 };
+  const match = calcSkillMatch(hero, incident);
+  const isActive = hs.status === 'Active';
+  const rewardBase = Math.max(calcPerSec() * incident.rewardMult * 10 * getIncidentRewardMultiplier(), 500);
+  const projectedReward = Math.floor(rewardBase * match.mult);
+  const morale = hs.morale ?? 100;
+  const level = hs.level ?? 1;
+  const score = (isActive ? 1000 : 0) + (match.mult * 100) + (level * 6) + (morale * 0.4) + ((hero.baseCps || 0) * 5);
+
+  return {
+    hero,
+    hs,
+    match,
+    isActive,
+    projectedReward,
+    score,
+    recommendation: isActive
+      ? `${hero.emoji} ${hero.name} is your best available ${match.label.replace(/^[^ ]+\s*/, '').toLowerCase()} for ~${fmt(projectedReward)} tickets.`
+      : `${hero.emoji} ${hero.name} would be ideal, but they are currently ${hs.status.toLowerCase()}.`
+  };
+}
+
+function renderDispatchBriefing(incident, heroCards) {
+  const sev = getIncidentSeverity(incident);
+  const chipsEl = document.getElementById('dispatch-briefing-chips');
+  const recommendationEl = document.getElementById('dispatch-recommendation-text');
+  const previewReward = Math.max(Math.floor(calcPerSec() * incident.rewardMult * 10 * getIncidentRewardMultiplier()), 500);
+  const timePressure = incident.timeLeft <= 10 ? 'Immediate' : incident.timeLeft <= 18 ? 'High' : 'Manageable';
+
+  chipsEl.innerHTML = [
+    `<span class="dispatch-chip severity-${sev.label.toLowerCase()}">${sev.label}</span>`,
+    `<span class="dispatch-chip">⏱️ ${incident.timeLeft}s to contain</span>`,
+    `<span class="dispatch-chip">🔥 ${timePressure} pressure</span>`,
+    `<span class="dispatch-chip">💰 ~${fmt(previewReward)} base reward</span>`
+  ].join('');
+
+  const bestAvailable = heroCards.find(card => card.isActive);
+  if (bestAvailable) {
+    recommendationEl.textContent = bestAvailable.recommendation;
+  } else if (heroCards.length) {
+    recommendationEl.textContent = 'Your squad is unavailable. Handle this yourself before HR turns the postmortem into performance art.';
+  } else {
+    recommendationEl.textContent = 'No squad yet. This is a solo panic attack. Hit Handle Myself and go earn your paycheck.';
+  }
+}
+
 function openDispatchModal() {
   if (!activeIncident) {
     toast('No active incident. A rare moment of peace.', 'green');
@@ -1159,42 +1310,49 @@ function openDispatchModal() {
   const heroListEl = document.getElementById('dispatch-hero-list');
   heroListEl.innerHTML = '';
   const ownedHeroes = HEROES.filter(h => S.heroState[h.id]?.owned);
+  const heroCards = ownedHeroes
+    .map(hero => getDispatchCardData(hero, inc))
+    .sort((a, b) => b.score - a.score);
+
+  renderDispatchBriefing(inc, heroCards);
 
   if (ownedHeroes.length === 0) {
     heroListEl.innerHTML = '<div class="dispatch-no-heroes">No heroes recruited yet — handle it yourself or recruit from the Squad tab first!</div>';
   } else {
-    ownedHeroes.forEach(h => {
+    heroCards.forEach((card, index) => {
       try {
-        const hs = S.heroState[h.id] || { status: 'Active' };
-        const match = calcSkillMatch(h, inc);
+        const { hero, hs, match, isActive, projectedReward } = card;
         const item = document.createElement('div');
-        item.className = `dispatch-hero-item ${hs.status !== 'Active' ? 'disabled' : ''}`;
-        const skillBadges = (h.skills || []).map(s => {
+        item.className = `dispatch-hero-item ${!isActive ? 'disabled' : ''}${index === 0 ? ' recommended' : ''}`;
+        const skillBadges = (hero.skills || []).map(s => {
           const isMatch = (inc.requiredSkills || []).includes(s);
           return `<span class="skill-badge${isMatch ? ' match' : ''}">${s}</span>`;
         }).join('');
-        
-        const isDisabled = hs.status !== 'Active';
-        const statusText = isDisabled ? `<span class="dispatch-status-out">${hs.status}</span>` : '';
+        const statusText = !isActive ? `<span class="dispatch-status-out">${hs.status}</span>` : '';
+        const recommendationBadge = index === 0 ? '<span class="dispatch-recommended-badge">TOP PICK</span>' : '';
+        const detailText = isActive
+          ? `Projected reward: ~${fmt(projectedReward)} tickets • Morale ${hs.morale ?? 100}%`
+          : `Unavailable right now • Morale ${hs.morale ?? 100}%`;
 
         item.innerHTML = `
-          <span class="dispatch-hero-emoji">${h.emoji}</span>
+          <span class="dispatch-hero-emoji">${hero.emoji}</span>
           <div class="dispatch-hero-info">
-            <div class="dispatch-hero-name">${h.name} ${statusText}</div>
-            <div class="dispatch-hero-role">${h.role}</div>
+            <div class="dispatch-hero-name">${hero.name} ${statusText} ${recommendationBadge}</div>
+            <div class="dispatch-hero-role">${hero.role}</div>
             <div class="dispatch-skills-row">${skillBadges}</div>
+            <div class="dispatch-hero-detail">${detailText}</div>
           </div>
           <div class="dispatch-match-label ${match.cls}">${match.label}</div>
-          <button class="btn-dispatch-hero" data-hero="${h.id}" ${isDisabled ? 'disabled' : ''}>
-            ${isDisabled ? 'Out' : 'Dispatch'}
+          <button class="btn-dispatch-hero" data-hero="${hero.id}" ${!isActive ? 'disabled' : ''}>
+            ${!isActive ? 'Out' : 'Dispatch'}
           </button>
         `;
-        if (!isDisabled) {
-          item.querySelector('.btn-dispatch-hero').addEventListener('click', () => dispatchHeroToIncident(h.id));
+        if (isActive) {
+          item.querySelector('.btn-dispatch-hero').addEventListener('click', () => dispatchHeroToIncident(hero.id));
         }
         heroListEl.appendChild(item);
       } catch (err) {
-        console.error('dispatch hero render failed', h?.id, err);
+        console.error('dispatch hero render failed', card?.hero?.id, err);
       }
     });
   }
@@ -1213,7 +1371,7 @@ function dispatchHeroToIncident(heroId) {
   if (!hero) return;
 
   const match      = calcSkillMatch(hero, inc);
-  const rewardBase = Math.max(calcPerSec() * inc.rewardMult * 10, 500);
+  const rewardBase = Math.max(calcPerSec() * inc.rewardMult * 10 * getIncidentRewardMultiplier(), 500);
   const reward     = Math.floor(rewardBase * match.mult);
 
   dismissIncident(false, true); // clears banner/modal/timer safely
@@ -1263,7 +1421,7 @@ function openMinigame(inc) {
 
   const clicksNeeded = Math.max(15, Math.min(40, Math.round(inc.rewardMult * 3.5)));
   const timeLimit    = Math.min(inc.timeLeft, 15);
-  const baseReward   = Math.max(calcPerSec() * inc.rewardMult * 6, 300);
+  const baseReward   = Math.max(calcPerSec() * inc.rewardMult * 6 * getIncidentRewardMultiplier(), 300);
 
   mgState = { inc, clicksNeeded, timeLimit, timeLeft: timeLimit,
               clicksMade: 0, progress: 0, baseReward, done: false, timer: null };
@@ -1417,6 +1575,12 @@ function renderStats() {
   document.getElementById('per-min-display').textContent  = fmtDecimal(ps * 60);
   document.getElementById('prestige-display').textContent = S.prestiges;
   document.getElementById('prestige-bonus-display').textContent = `×${S.prestigeMultiplier.toFixed(2)}`;
+  const officeRow = document.getElementById('office-upgrades-row');
+  const officeLabel = document.getElementById('office-upgrades-display');
+  if (officeRow && officeLabel) {
+    officeRow.style.display = (S.officePerksChosen || []).length > 0 ? 'flex' : 'none';
+    officeLabel.textContent = `${(S.officePerksChosen || []).length} permanent`;
+  }
   
   // Day display (new)
   const dayEl = document.getElementById('game-day-label');
@@ -1679,6 +1843,7 @@ function renderStatsTab() {
       <div class="stat-card"><span class="stat-card-icon">⚡</span><div class="stat-card-label">Per Click</div><div class="stat-card-value">${fmtDecimal(pc)}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🔄</span><div class="stat-card-label">Per Second</div><div class="stat-card-value">${fmtDecimal(ps)}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🏆</span><div class="stat-card-label">Promotions</div><div class="stat-card-value">${S.prestiges}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🪑</span><div class="stat-card-label">Office Upgrades</div><div class="stat-card-value">${(S.officePerksChosen || []).length}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🔥</span><div class="stat-card-label">Best Combo</div><div class="stat-card-value">×${S.maxCombo}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🚨</span><div class="stat-card-label">Incidents Resolved</div><div class="stat-card-value">${S.incidentsResolved}</div></div>
       <div class="stat-card"><span class="stat-card-icon">📡</span><div class="stat-card-label">Dispatches</div><div class="stat-card-value">${S.dispatches}</div></div>
@@ -1882,6 +2047,7 @@ function renderAll() {
   renderStatsTab();
   renderOnboarding();
   checkPromotionReady();
+  if ((S.officeDraftChoices || []).length) renderOfficeInterlude();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1909,12 +2075,16 @@ function loadGame() {
     merged.skillMods = Object.assign({}, defaults.skillMods, saved.skillMods || {});
     merged.heroState = Object.assign({}, defaults.heroState, saved.heroState || {});
     merged.upgradeOwned = Object.assign({}, defaults.upgradeOwned, saved.upgradeOwned || {});
+    merged.officeMods = Object.assign({}, defaults.officeMods, saved.officeMods || {});
+    merged.officePerksChosen = Array.isArray(saved.officePerksChosen) ? saved.officePerksChosen : [];
+    merged.officeDraftChoices = Array.isArray(saved.officeDraftChoices) ? saved.officeDraftChoices : [];
     S = merged;
     // Restore non-serializable (timers)
     S.comboTimer = null;
     // Re-apply modifiers from scratch to avoid double-stacking
     reapplyAllSkills();
     reapplyAllAchievements();
+    recalcOfficeMods();
   } catch(e) {
     console.error('Failed to load save:', e);
   }
@@ -1971,6 +2141,7 @@ function initTabs() {
 // ══════════════════════════════════════════════════════════════
 (function init() {
   loadGame();
+  recalcOfficeMods();
 
   // Pick up difficulty from bootstrap (stored in localStorage by difficulty-modal script)
   const bootstrapDiff = localStorage.getItem('difficultyMode') || localStorage.getItem('sdhDifficulty') || (window.GAME_SETTINGS && window.GAME_SETTINGS.difficulty);
