@@ -174,7 +174,17 @@ function applyBadHireMoraleDrain() {
   let badCount = 0;
   HEROES.forEach(h => {
     const hs = S.heroState[h.id];
-    if (hs && hs.owned && hs.badHire && hs.status === 'Active') badCount++;
+    if (hs && hs.owned && hs.badHire && hs.status === 'Active') {
+      badCount++;
+      const ownedMs = now - (hs.ownedAt || now);
+      const newHintLevel = ownedMs >= 150000 ? 3 : ownedMs >= 90000 ? 2 : ownedMs >= 30000 ? 1 : 0;
+      if (newHintLevel > (hs.badHireHintLevel || 0)) {
+        hs.badHireHintLevel = newHintLevel;
+        if (newHintLevel === 1) toast(`🤨 ${h.name} is saying all the right buzzwords and none of the right things.`, 'red');
+        if (newHintLevel === 2) toast(`🚩 ${h.name} is dragging the team down. People are starting to notice.`, 'red');
+        if (newHintLevel === 3) toast(`☠️ ${h.name} has achieved full bad-hire visibility. Nobody trusts them anymore.`, 'red');
+      }
+    }
   });
   if (badCount === 0) {
     // Slowly recover morale when no bad hires present
@@ -680,7 +690,9 @@ function recruitHero(id) {
     badHireFailChance: meta.badHire ? (meta.badHireFailChance || (0.4 + Math.random() * 0.2)) : 0,
     badHireClue: meta.badHireClue || '',
     ownedAt: now,
+    discoveredAt: now,
     badHirePenalty: 1,
+    badHireHintLevel: 0,
   };
   S.applicantPool = S.applicantPool.filter(appId => appId !== id);
   S.heroesOwned++;
@@ -911,15 +923,31 @@ function reapplyAllAchievements() {
 // ══════════════════════════════════════════════════════════════
 function checkPromotionReady() {
   const nextTier = CAREER[S.careerTier + 1];
-  if (!nextTier) return; // Already CIO
-  const req = getCareerRequirement(nextTier);
   const panel = document.getElementById('promotion-panel');
+  const titleEl = document.getElementById('promo-title');
+  const descEl = document.getElementById('promo-description');
+  const btnEl = document.getElementById('btn-promote');
+  if (!nextTier) {
+    panel.classList.add('hidden');
+    return;
+  }
+  const req = getCareerRequirement(nextTier);
+  const progress = req > 0 ? (S.lifetimeTickets / req) : 0;
   if (S.lifetimeTickets >= req) {
     panel.classList.remove('hidden');
-    document.getElementById('promo-description').textContent =
-      `You've proven yourself. Accept promotion to ${nextTier.icon} ${nextTier.title} and gain ×${nextTier.prestigeBonus} permanent bonus. (Tickets reset, squad and upgrades stay!)`;
+    titleEl.textContent = '🚀 Promotion Ready!';
+    descEl.textContent = `You survived long enough to be rewarded with more responsibility. Promote to ${nextTier.icon} ${nextTier.title} and gain ×${nextTier.prestigeBonus} permanent bonus. Tickets reset. Squad and upgrades stay.`;
+    btnEl.textContent = `Accept Promotion to ${nextTier.title}`;
+    btnEl.disabled = false;
+  } else if (progress >= 0.72) {
+    panel.classList.remove('hidden');
+    titleEl.textContent = '👀 Promotion Track';
+    descEl.textContent = `${fmt(req - S.lifetimeTickets)} tickets until ${nextTier.icon} ${nextTier.title}. Leadership can smell a promotion deck forming.`;
+    btnEl.textContent = 'Not Quite There Yet';
+    btnEl.disabled = true;
   } else {
     panel.classList.add('hidden');
+    btnEl.disabled = false;
   }
 }
 
@@ -944,6 +972,7 @@ function doPromotion() {
   reapplyAllAchievements();
   SFX.promotion();
   toast(`🚀 PROMOTED to ${nextTier.icon} ${nextTier.title}! Bonus: ×${nextTier.prestigeBonus}`, 'gold');
+  toast(`📣 New title, same chaos. Enjoy your fresh badge and expanded blast radius.`, 'gold');
   if (S.careerTier === CAREER.length - 1) {
     toast('🏆 YOU ARE THE CIO! The ultimate achievement unlocked!', 'gold');
   }
@@ -994,6 +1023,48 @@ function getIncidentSeverity(inc) {
   return { label: 'SEV-3', risk: 'Manageable mess. Still not something to leave burning.' };
 }
 
+function getIncidentCommentary(inc) {
+  const pool = {
+    critical: [
+      'The executive chain is already forming an opinion and it is a bad one.',
+      'Somewhere, a VP has started typing in all caps.',
+      'This is the sort of outage that creates meetings for years.'
+    ],
+    security: [
+      'Security would like to remind everyone they warned about this exact thing.',
+      'Someone just said “containment” and the room got very quiet.',
+      'This one ends with either heroics or mandatory training.'
+    ],
+    database: [
+      'Finance can smell this problem from three floors away.',
+      'The database team is preparing a sermon on index hygiene.',
+      'If this goes badly, somebody is blaming the migration notes.'
+    ],
+    network: [
+      'Packets are fleeing the scene in terror.',
+      'Networking insists it is DNS until proven otherwise.',
+      'Several conference rooms are now spiritually disconnected.'
+    ],
+    devops: [
+      'A dashboard somewhere just became performance art.',
+      'This smells like automation with too much confidence.',
+      'There are far too many graphs involved in this disaster.'
+    ],
+    cloud: [
+      'The cloud remains someone else’s computer and somehow still your problem.',
+      'A finance analyst just refreshed the billing page and screamed softly.',
+      'Elastic scale has become elastic regret.'
+    ],
+    clerical: [
+      'This is petty, stupid, and somehow still career-limiting.',
+      'The queue has achieved sentience and it resents you personally.',
+      'Perfect. A low-glamour catastrophe.'
+    ],
+  };
+  const arr = pool[inc.category] || pool.clerical;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 function triggerIncident() {
   if (activeIncident) return;
   const inc = INCIDENTS[Math.floor(Math.random() * INCIDENTS.length)];
@@ -1001,10 +1072,11 @@ function triggerIncident() {
   const banner = document.getElementById('incident-banner');
   const sev = getIncidentSeverity(inc);
   const previewReward = Math.max(Math.floor(calcPerSec() * inc.rewardMult * 10), 500);
+  const commentary = getIncidentCommentary(inc);
   document.getElementById('incident-icon').textContent = inc.icon;
   document.getElementById('incident-severity').textContent = sev.label;
   document.getElementById('incident-title').textContent = inc.title;
-  document.getElementById('incident-text').textContent  = inc.text;
+  document.getElementById('incident-text').textContent  = `${inc.text} ${commentary}`;
   document.getElementById('incident-meta').textContent = `${sev.risk} Reward preview: ~${fmt(previewReward)} tickets.`;
   document.getElementById('incident-timer').textContent = `${inc.timeLimit}s`;
   banner.classList.remove('hidden');
@@ -1438,6 +1510,8 @@ function buildHeroCard(h, hs, owned) {
     if (hs.morale === undefined) hs.morale = 100;
     const moraleColor = hs.morale > 70 ? 'var(--green)' : hs.morale > 30 ? 'var(--gold)' : 'var(--red)';
     const statusClass = hs.status === 'Active' ? 'status-active' : 'status-out';
+    const hintLevel = hs.badHire ? (hs.badHireHintLevel || 0) : 0;
+    const badHireHint = hs.badHire ? `<div class="bad-hire-hint hint-${hintLevel}">${hintLevel === 0 ? '😬 Slightly off vibes.' : hintLevel === 1 ? '🤨 Talks in buzzwords. Output not found.' : hintLevel === 2 ? '🚩 Team morale dropping around this one.' : '☠️ Confirmed bad hire. Act accordingly.'}</div>` : '';
 
     card.innerHTML = `
       <div class="hero-card-top">
@@ -1449,6 +1523,7 @@ function buildHeroCard(h, hs, owned) {
         </div>
       </div>
       <div class="hero-skills-row">${skillBadges}</div>
+      ${badHireHint}
       <div class="hero-card-stats">
         <div class="hero-stat">Level<span>${lvl}</span></div>
         <div class="hero-stat">Tickets/sec<span>${hs.status === 'Active' ? cpsContrib : '0'}</span></div>
