@@ -114,7 +114,14 @@
     <div id="incident-banner" class="incident-banner hidden" role="alert">
       <div class="incident-inner">
         <span id="incident-icon" class="incident-icon">🚨</span>
-        <span id="incident-text" class="incident-text"></span>
+        <div class="incident-copy">
+          <div class="incident-topline">
+            <span id="incident-severity" class="incident-severity">SEV-2</span>
+            <span id="incident-title" class="incident-title">Critical Incident</span>
+          </div>
+          <div id="incident-text" class="incident-text"></div>
+          <div id="incident-meta" class="incident-meta"></div>
+        </div>
         <button id="incident-resolve" class="btn-incident" aria-label="Respond to incident">RESPOND NOW</button>
         <span id="incident-timer" class="incident-timer"></span>
       </div>
@@ -185,6 +192,16 @@
               <span>❌ Strikes</span><strong id="strikes-display">0 / 3</strong>
             </div>
           </div>
+        </div>
+
+        <div class="panel onboarding-panel" id="onboarding-panel">
+          <div class="onboarding-head">
+            <h2 class="onboarding-title">⚡ Quick Start</h2>
+            <button id="btn-dismiss-onboarding" class="onboarding-dismiss" aria-label="Dismiss quick start">×</button>
+          </div>
+          <p id="onboarding-tip" class="onboarding-tip">Clear a few tickets to get the queue moving.</p>
+          <div id="onboarding-checklist" class="onboarding-checklist"></div>
+          <button id="btn-onboarding-action" class="btn-onboarding-action">Get Started</button>
         </div>
 
         <div class="panel promotion-panel hidden" id="promotion-panel">
@@ -331,39 +348,25 @@
       <div class="help-overlay" id="help-overlay"></div>
       <div class="help-panel">
         <h2>🖥️ How to Play</h2>
-        <div class="help-grid">
+        <p class="help-lead">Three things matter at the start: click tickets, hire one competent gremlin, and do not ignore incidents.</p>
+        <div class="help-grid compact">
           <div class="help-card">
-            <span class="help-card-icon">🎫</span>
-            <h3>Click to Resolve</h3>
-            <p>Click the <strong>Resolve Ticket</strong> button to earn tickets. Click fast to build combos for bonus multipliers!</p>
+            <span class="help-card-icon">1️⃣</span>
+            <h3>Farm Tickets Fast</h3>
+            <p>Hammer <strong>Resolve Ticket</strong> to build early momentum and combo bonuses.</p>
           </div>
           <div class="help-card">
-            <span class="help-card-icon">👥</span>
-            <h3>Build Your Squad</h3>
-            <p>Spend tickets to recruit <strong>IT heroes</strong> who auto-resolve tickets for you. Level them up for more output.</p>
+            <span class="help-card-icon">2️⃣</span>
+            <h3>Recruit Early</h3>
+            <p>Your first hire gives passive throughput and makes the game feel less like unpaid overtime.</p>
           </div>
           <div class="help-card">
-            <span class="help-card-icon">🛒</span>
-            <h3>Buy Upgrades</h3>
-            <p>Invest in <strong>tools &amp; automation</strong> — from macro libraries to AI platforms — to multiply your throughput.</p>
-          </div>
-          <div class="help-card">
-            <span class="help-card-icon">🚨</span>
-            <h3>Handle Incidents</h3>
-            <p><strong>Random incidents</strong> pop up with time limits. Dispatch heroes or handle them yourself in a click minigame for big rewards!</p>
-          </div>
-          <div class="help-card">
-            <span class="help-card-icon">🧠</span>
-            <h3>Unlock Skills</h3>
-            <p>Earn <strong>Skill Points</strong> on level-up and spend them in the Skill Tree for powerful permanent bonuses.</p>
-          </div>
-          <div class="help-card">
-            <span class="help-card-icon">🚀</span>
-            <h3>Get Promoted</h3>
-            <p>Hit lifetime ticket milestones to <strong>promote</strong>. Each promotion resets tickets but gives a permanent multiplier. Climb to CIO!</p>
+            <span class="help-card-icon">3️⃣</span>
+            <h3>Respect Incidents</h3>
+            <p>Incidents are high-reward panic events. Ignore them and you earn strikes. Three strikes and HR wins.</p>
           </div>
         </div>
-        <button id="btn-close-help" class="btn-close-help">Got It — Let's Go! 🚀</button>
+        <button id="btn-close-help" class="btn-close-help">Got It — Let’s Cause Some Process Improvement 🚀</button>
       </div>
     </div>
 

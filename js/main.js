@@ -45,6 +45,13 @@ function buildDefaultState() {
     // Tracking day progression
     gameDay: 1,
     dayProgress: 0,
+    // Guided onboarding flags
+    tutorialDismissed: false,
+    tutorialFirstClickDone: false,
+    tutorialFirstRecruitDone: false,
+    tutorialFirstUpgradeDone: false,
+    tutorialFirstIncidentSeen: false,
+    tutorialFirstIncidentResolved: false,
     // Heroes currently available for hire
     applicantPool: [],
     // Metadata for active recruit candidates (bad hire flags/hints)
@@ -228,6 +235,73 @@ function toast(msg, type = '') {
   }, 2800);
 }
 
+function setActiveTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const active = b.dataset.tab === tabName;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === `tab-${tabName}`));
+  if (tabName === 'squad') renderSquad();
+  if (tabName === 'upgrades') renderUpgrades();
+  if (tabName === 'skills') renderSkills();
+  if (tabName === 'achievements') renderAchievements();
+  if (tabName === 'stats') renderStatsTab();
+}
+
+function renderOnboarding() {
+  const panel = document.getElementById('onboarding-panel');
+  if (!panel) return;
+
+  const steps = [
+    { done: S.tutorialFirstClickDone, text: 'Resolve your first ticket and start the queue moving.' },
+    { done: S.tutorialFirstRecruitDone, text: 'Recruit your first hero so tickets keep moving without your fingers.' },
+    { done: S.tutorialFirstUpgradeDone, text: 'Buy your first upgrade and begin automating your way into management.' },
+    { done: S.tutorialFirstIncidentResolved, text: 'Survive your first incident without collecting a strike.' },
+  ];
+
+  const allDone = steps.every(step => step.done);
+  if (S.tutorialDismissed || allDone) {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+
+  document.getElementById('onboarding-checklist').innerHTML = steps.map(step => `
+    <div class="onboarding-item ${step.done ? 'done' : ''}">
+      <span class="onboarding-mark">${step.done ? '✓' : '•'}</span>
+      <span>${step.text}</span>
+    </div>
+  `).join('');
+
+  let tip = 'Clear a few tickets to get the queue moving.';
+  let actionLabel = 'Resolve Some Tickets';
+  let action = 'click';
+
+  if (!S.tutorialFirstClickDone) {
+    tip = 'Mash Resolve Ticket a few times. Momentum first, dignity later.';
+    actionLabel = 'Resolve Some Tickets';
+    action = 'click';
+  } else if (!S.tutorialFirstRecruitDone) {
+    tip = 'Your first recruit is the first taste of passive income. Open Squad and hire one.';
+    actionLabel = 'Open Squad';
+    action = 'squad';
+  } else if (!S.tutorialFirstUpgradeDone) {
+    tip = 'Now buy one upgrade. Tools beat heroics, mostly.';
+    actionLabel = 'Open Upgrades';
+    action = 'upgrades';
+  } else {
+    tip = 'Next incident that pops up? Handle it fast. HR is always watching.';
+    actionLabel = 'Stay Ready';
+    action = 'none';
+  }
+
+  document.getElementById('onboarding-tip').textContent = tip;
+  const btn = document.getElementById('btn-onboarding-action');
+  btn.textContent = actionLabel;
+  btn.dataset.action = action;
+}
+
 function floatNumber(text, x, y) {
   const el = document.createElement('div');
   el.className = 'float-num';
@@ -296,6 +370,12 @@ function handleClick(evt) {
   const sm = S.skillMods;
   let amount = calcPerClick();
   S.totalClicks = (S.totalClicks || 0) + 1;
+
+  if (!S.tutorialFirstClickDone) {
+    S.tutorialFirstClickDone = true;
+    toast('🧾 Queue open. Good. Now turn panic into throughput.', 'gold');
+    renderOnboarding();
+  }
 
   // Critical click
   if (sm.critChance > 0 && Math.random() < sm.critChance) {
@@ -396,7 +476,8 @@ function gainXp(amount) {
 
 function onLevelUp() {
   SFX.levelUp();
-  toast(`🎉 LEVEL UP! Now Level ${S.level}. +1 Skill Point!`, 'gold');
+  const firstBigLevel = S.level === 2;
+  toast(firstBigLevel ? '🎉 Level 2! Fine. You are now marginally employable. +1 Skill Point!' : `🎉 LEVEL UP! Now Level ${S.level}. +1 Skill Point!`, 'gold');
   const btn = document.getElementById('main-clicker');
   btn.classList.add('level-up-flash');
   btn.addEventListener('animationend', () => btn.classList.remove('level-up-flash'), { once: true });
@@ -563,6 +644,11 @@ function buyUpgrade(id) {
   if (u.perClickBonus) S.basePerClick += u.perClickBonus;
   SFX.purchase();
   toast(`✅ Purchased: ${u.name}`, 'green');
+  if (!S.tutorialFirstUpgradeDone) {
+    S.tutorialFirstUpgradeDone = true;
+    toast('⚙️ First upgrade online. Congratulations, you have invented process.', 'gold');
+    renderOnboarding();
+  }
   renderUpgrades();
   renderStats();
   checkAchievements();
@@ -600,6 +686,11 @@ function recruitHero(id) {
   S.heroesOwned++;
   SFX.recruit();
   toast(`🦸 ${h.name} joined your squad!`, meta.badHire ? 'red' : 'gold');
+  if (!S.tutorialFirstRecruitDone) {
+    S.tutorialFirstRecruitDone = true;
+    toast('👥 First hire secured. Delegation: the first step toward management and plausible deniability.', 'gold');
+    renderOnboarding();
+  }
   renderSquad();
   renderStats();
   checkAchievements();
@@ -897,16 +988,32 @@ function firePlayer() {
 let activeIncident = null;
 let incidentCountdown = null;
 
+function getIncidentSeverity(inc) {
+  if ((inc.rewardMult || 0) >= 4 || (inc.timeLimit || 999) <= 12) return { label: 'SEV-1', risk: 'Ignore this and you are asking for a strike.' };
+  if ((inc.rewardMult || 0) >= 2.5 || (inc.timeLimit || 999) <= 18) return { label: 'SEV-2', risk: 'High-pressure issue. Respond fast for the juicy reward.' };
+  return { label: 'SEV-3', risk: 'Manageable mess. Still not something to leave burning.' };
+}
+
 function triggerIncident() {
   if (activeIncident) return;
   const inc = INCIDENTS[Math.floor(Math.random() * INCIDENTS.length)];
   activeIncident = { ...inc, timeLeft: inc.timeLimit };
   const banner = document.getElementById('incident-banner');
+  const sev = getIncidentSeverity(inc);
+  const previewReward = Math.max(Math.floor(calcPerSec() * inc.rewardMult * 10), 500);
   document.getElementById('incident-icon').textContent = inc.icon;
-  document.getElementById('incident-text').textContent  = inc.title + ' — Tap RESPOND NOW!';
+  document.getElementById('incident-severity').textContent = sev.label;
+  document.getElementById('incident-title').textContent = inc.title;
+  document.getElementById('incident-text').textContent  = inc.text;
+  document.getElementById('incident-meta').textContent = `${sev.risk} Reward preview: ~${fmt(previewReward)} tickets.`;
   document.getElementById('incident-timer').textContent = `${inc.timeLimit}s`;
   banner.classList.remove('hidden');
   SFX.incident();
+  if (!S.tutorialFirstIncidentSeen) {
+    S.tutorialFirstIncidentSeen = true;
+    toast('🚨 First incident! Move now or let HR start a scrapbook.', 'red');
+    renderOnboarding();
+  }
   incidentCountdown = setInterval(() => {
     if (!activeIncident) { clearInterval(incidentCountdown); return; }
     activeIncident.timeLeft--;
@@ -944,7 +1051,10 @@ function calcSkillMatch(hero, incident) {
 }
 
 function openDispatchModal() {
-  if (!activeIncident) return;
+  if (!activeIncident) {
+    toast('No active incident. A rare moment of peace.', 'green');
+    return;
+  }
   const inc = activeIncident;
 
   // Populate header
@@ -968,34 +1078,38 @@ function openDispatchModal() {
     heroListEl.innerHTML = '<div class="dispatch-no-heroes">No heroes recruited yet — handle it yourself or recruit from the Squad tab first!</div>';
   } else {
     ownedHeroes.forEach(h => {
-      const hs = S.heroState[h.id] || { status: 'Active' };
-      const match = calcSkillMatch(h, inc);
-      const item = document.createElement('div');
-      item.className = `dispatch-hero-item ${hs.status !== 'Active' ? 'disabled' : ''}`;
-      const skillBadges = (h.skills || []).map(s => {
-        const isMatch = (inc.requiredSkills || []).includes(s);
-        return `<span class="skill-badge${isMatch ? ' match' : ''}">${s}</span>`;
-      }).join('');
-      
-      const isDisabled = hs.status !== 'Active';
-      const statusText = isDisabled ? `<span class="dispatch-status-out">${hs.status}</span>` : '';
+      try {
+        const hs = S.heroState[h.id] || { status: 'Active' };
+        const match = calcSkillMatch(h, inc);
+        const item = document.createElement('div');
+        item.className = `dispatch-hero-item ${hs.status !== 'Active' ? 'disabled' : ''}`;
+        const skillBadges = (h.skills || []).map(s => {
+          const isMatch = (inc.requiredSkills || []).includes(s);
+          return `<span class="skill-badge${isMatch ? ' match' : ''}">${s}</span>`;
+        }).join('');
+        
+        const isDisabled = hs.status !== 'Active';
+        const statusText = isDisabled ? `<span class="dispatch-status-out">${hs.status}</span>` : '';
 
-      item.innerHTML = `
-        <span class="dispatch-hero-emoji">${h.emoji}</span>
-        <div class="dispatch-hero-info">
-          <div class="dispatch-hero-name">${h.name} ${statusText}</div>
-          <div class="dispatch-hero-role">${h.role}</div>
-          <div class="dispatch-skills-row">${skillBadges}</div>
-        </div>
-        <div class="dispatch-match-label ${match.cls}">${match.label}</div>
-        <button class="btn-dispatch-hero" data-hero="${h.id}" ${isDisabled ? 'disabled' : ''}>
-          ${isDisabled ? 'Out' : 'Dispatch'}
-        </button>
-      `;
-      if (!isDisabled) {
-        item.querySelector('.btn-dispatch-hero').addEventListener('click', () => dispatchHeroToIncident(h.id));
+        item.innerHTML = `
+          <span class="dispatch-hero-emoji">${h.emoji}</span>
+          <div class="dispatch-hero-info">
+            <div class="dispatch-hero-name">${h.name} ${statusText}</div>
+            <div class="dispatch-hero-role">${h.role}</div>
+            <div class="dispatch-skills-row">${skillBadges}</div>
+          </div>
+          <div class="dispatch-match-label ${match.cls}">${match.label}</div>
+          <button class="btn-dispatch-hero" data-hero="${h.id}" ${isDisabled ? 'disabled' : ''}>
+            ${isDisabled ? 'Out' : 'Dispatch'}
+          </button>
+        `;
+        if (!isDisabled) {
+          item.querySelector('.btn-dispatch-hero').addEventListener('click', () => dispatchHeroToIncident(h.id));
+        }
+        heroListEl.appendChild(item);
+      } catch (err) {
+        console.error('dispatch hero render failed', h?.id, err);
       }
-      heroListEl.appendChild(item);
     });
   }
 
@@ -1037,6 +1151,11 @@ function dispatchHeroToIncident(heroId) {
     gainTickets(reward);
     gainXp(calcXpGain(reward));
     S.incidentsResolved++;
+    if (!S.tutorialFirstIncidentResolved) {
+      S.tutorialFirstIncidentResolved = true;
+      toast('🛡️ Incident contained. Excellent. Pretend this level of competence is sustainable.', 'gold');
+      renderOnboarding();
+    }
     toast(`✅ ${hero.name}: ${match.label} — +${fmt(reward)} tickets!`, 'green');
     checkAchievements();
   }, resolveTime);
@@ -1191,6 +1310,8 @@ function renderStats() {
   const ps = calcPerSec();
   const pc = calcPerClick();
   document.getElementById('tickets-display').textContent  = fmt(S.tickets);
+  const diffDisplay = document.getElementById('difficulty-display');
+  if (diffDisplay) diffDisplay.textContent = getDifficulty().name;
   document.getElementById('lifetime-display').textContent = fmt(S.lifetimeTickets);
   document.getElementById('per-click-display').textContent= fmtDecimal(pc);
   document.getElementById('per-sec-display').textContent  = fmtDecimal(ps);
@@ -1549,6 +1670,7 @@ function openHelp() {
 }
 function closeHelp() {
   document.getElementById('help-modal').classList.add('hidden');
+  renderOnboarding();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1576,6 +1698,7 @@ function renderAll() {
   renderSkills();
   renderAchievements();
   renderStatsTab();
+  renderOnboarding();
   checkPromotionReady();
 }
 
@@ -1657,19 +1780,7 @@ setInterval(saveGame, 30_000);
 // ══════════════════════════════════════════════════════════════
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
-      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      btn.setAttribute('aria-selected', 'true');
-      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-      // Re-render active tab for freshness
-      if (btn.dataset.tab === 'squad')        renderSquad();
-      if (btn.dataset.tab === 'upgrades')     renderUpgrades();
-      if (btn.dataset.tab === 'skills')       renderSkills();
-      if (btn.dataset.tab === 'achievements') renderAchievements();
-      if (btn.dataset.tab === 'stats')        renderStatsTab();
-    });
+    btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
   });
 }
 
@@ -1712,6 +1823,16 @@ function initTabs() {
   document.getElementById('btn-help').addEventListener('click', openHelp);
   document.getElementById('btn-close-help').addEventListener('click', closeHelp);
   document.getElementById('help-overlay').addEventListener('click', closeHelp);
+  document.getElementById('btn-dismiss-onboarding').addEventListener('click', () => {
+    S.tutorialDismissed = true;
+    renderOnboarding();
+  });
+  document.getElementById('btn-onboarding-action').addEventListener('click', () => {
+    const action = document.getElementById('btn-onboarding-action').dataset.action;
+    if (action === 'squad') setActiveTab('squad');
+    else if (action === 'upgrades') setActiveTab('upgrades');
+    else if (action === 'click') document.getElementById('main-clicker').focus();
+  });
   // Incident: RESPOND NOW opens dispatch modal
   document.getElementById('incident-resolve').addEventListener('click', openDispatchModal);
   // Dispatch modal: self-handle + overlay close
