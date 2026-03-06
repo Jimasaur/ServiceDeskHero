@@ -1303,7 +1303,8 @@ function onMinigameClick() {
   document.getElementById('minigame-reward-preview').innerHTML =
     `Current Reward: <strong>${fmt(previewReward)} tickets</strong>`;
   if (mgState.progress >= 1) {
-    document.getElementById('btn-minigame-resolve').classList.remove('hidden');
+    // Do not reveal a new clickable reward button under the player's cursor.
+    // High-speed clicking was causing accidental follow-up clicks in the same spot.
     endMinigame(true);
   }
 }
