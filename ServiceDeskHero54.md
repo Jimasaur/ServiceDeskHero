@@ -174,6 +174,19 @@ Potential future layers:
 3. Increase milestone juice (sound, animation, toast writing)
 4. Add more squad chemistry / politics
 5. Improve recruit card differentiation
+6. Add org hierarchy / staffing limits so the team stops feeling like a flat card wall
+7. Add between-promotion interludes with office upgrades and identity choices
+
+### Org Hierarchy Vision
+The roster should evolve from a simple hero collection into a reporting structure.
+
+Suggested progression:
+- start with **2 max staff**
+- **Team Lead:** 3 direct reports
+- **Manager:** up to 8 analysts plus 1 team lead
+- **Director:** up to 5 managers, each managing their own branch
+
+Once management exists, analysts should **nest visually under managers** to declutter the UI and make the roster feel like a real org chart.
 
 ### Lower Priority / Nice-to-Have
 1. Extra cosmetic polish
