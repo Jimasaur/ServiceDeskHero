@@ -371,15 +371,28 @@ function renderOnboarding() {
   let actionLabel = 'Resolve Some Tickets';
   let action = 'click';
 
+  const recruitNeeded = recruitTarget ? Math.max(0, recruitTarget.cost - S.tickets) : Infinity;
+  const upgradeNeeded = upgradeTarget ? Math.max(0, upgradeTarget.cost - S.tickets) : Infinity;
+  const shouldPrioritizeUpgrade = !S.tutorialFirstUpgradeDone && !S.tutorialFirstRecruitDone && upgradeNeeded < recruitNeeded;
+
   if (!S.tutorialFirstClickDone) {
     tip = 'Mash Resolve Ticket a few times. Momentum first, dignity later.';
     actionLabel = 'Resolve Some Tickets';
     action = 'click';
+  } else if (shouldPrioritizeUpgrade) {
+    if (upgradeTarget) {
+      tip = upgradeNeeded > 0
+        ? `${upgradeTarget.upgrade.name} is the fastest power spike at ${fmt(upgradeTarget.cost)} tickets. Need ${fmt(upgradeNeeded)} more before you can stop brute-forcing the queue.`
+        : `${upgradeTarget.upgrade.name} is affordable now. Open Upgrades and buy your first bit of process theater.`;
+    } else {
+      tip = 'Now buy one upgrade. Tools beat heroics, mostly.';
+    }
+    actionLabel = 'Open Upgrades';
+    action = 'upgrades';
   } else if (!S.tutorialFirstRecruitDone) {
     if (recruitTarget) {
-      const needed = Math.max(0, recruitTarget.cost - S.tickets);
-      tip = needed > 0
-        ? `${recruitTarget.hero.name} is your cheapest hire at ${fmt(recruitTarget.cost)} tickets. Need ${fmt(needed)} more before delegation begins.`
+      tip = recruitNeeded > 0
+        ? `${recruitTarget.hero.name} is your cheapest hire at ${fmt(recruitTarget.cost)} tickets. Need ${fmt(recruitNeeded)} more before delegation begins.`
         : `${recruitTarget.hero.name} is affordable now. Open Squad and stop doing all the work yourself.`;
     } else {
       tip = 'Your first recruit is the first taste of passive income. Open Squad and hire one.';
@@ -388,9 +401,8 @@ function renderOnboarding() {
     action = 'squad';
   } else if (!S.tutorialFirstUpgradeDone) {
     if (upgradeTarget) {
-      const needed = Math.max(0, upgradeTarget.cost - S.tickets);
-      tip = needed > 0
-        ? `${upgradeTarget.upgrade.name} is the cheapest upgrade at ${fmt(upgradeTarget.cost)} tickets. Need ${fmt(needed)} more to start automating.`
+      tip = upgradeNeeded > 0
+        ? `${upgradeTarget.upgrade.name} is the cheapest upgrade at ${fmt(upgradeTarget.cost)} tickets. Need ${fmt(upgradeNeeded)} more to start automating.`
         : `${upgradeTarget.upgrade.name} is affordable now. Open Upgrades and buy your first bit of process theater.`;
     } else {
       tip = 'Now buy one upgrade. Tools beat heroics, mostly.';
