@@ -384,6 +384,9 @@
   border-radius: 8px;
   font-size: 0.75rem;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: filter var(--transition), transform var(--transition);
 }
 .btn-hero:hover:not(:disabled) { filter: brightness(1.1); transform: scale(1.02); }
