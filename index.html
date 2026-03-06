@@ -94,6 +94,7 @@
               <span id="xp-label" class="xp-label">0 / 100 XP</span>
             </div>
             <div class="level-badge">Lvl <span id="hero-level">1</span></div>
+            <div id="game-day-label" class="game-day-badge">Day 1</div>
           </div>
         </div>
 
@@ -169,11 +170,14 @@
           </div>
           <div id="squad-roster" class="squad-roster"></div>
 
-          <div class="squad-bench-header">
-            <h3>Available Recruits</h3>
-            <p class="tab-desc">
-              Hire new heroes to expand your dispatch capability.
-            </p>
+          <div class="squad-bench-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <h3>Available Recruits</h3>
+              <p class="tab-desc">
+                Hire new heroes. Not finding what you need? Refresh the job board!
+              </p>
+            </div>
+            <button id="btn-refresh-board" class="btn-hero btn-levelup" style="padding: 8px 16px;">Refresh Board (500🎫)</button>
           </div>
           <div id="recruit-roster" class="recruit-roster"></div>
         </div>
@@ -368,6 +372,7 @@
   </div>
 
   <!-- ========== JS MODULES ========== -->
+  <script src="js/heroes.js"></script>
   <script src="js/audio.js"></script>
   <script type="module" src="js/constants.js"></script>
   <script type="module" src="js/main.js"></script>

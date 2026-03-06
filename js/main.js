@@ -38,8 +38,13 @@ function buildDefaultState() {
     unlockedSkills: [],
     // Upgrade ownership { id: count }
     upgradeOwned: {},
-    // Hero state { id: { owned, level, xp } }
+    // Hero state { id: { owned, level, xp, status, morale, absenceDays } }
     heroState: {},
+    // Tracking day progression
+    gameDay: 1,
+    dayProgress: 0,
+    // Heroes currently available for hire
+    applicantPool: [],
     // Achievements earned
     achievedIds: [],
     // Stats for achievement checks
@@ -146,6 +151,7 @@ function calcPerSec() {
   HEROES.forEach(h => {
     const hs = S.heroState[h.id];
     if (!hs || !hs.owned) return;
+    if (hs.status && hs.status !== 'Active') return; // Out on crisis
     const lvlMult = 1 + (hs.level - 1) * 0.25;
     squadPs += h.baseCps * lvlMult;
   });
@@ -288,7 +294,120 @@ function startTick() {
     }
     checkPromotionReady();
     checkAchievements();
+    updateDay();
   }, 100);
+}
+
+function updateDay() {
+  S.dayProgress += 1; // 100ms = 1 tick
+  if (S.dayProgress >= 600) { // 60 seconds = 1 day
+    S.dayProgress = 0;
+    S.gameDay++;
+    triggerDailyEvents();
+    renderStats();
+  }
+}
+
+function triggerDailyEvents() {
+  const CRISIS_CHANCE = 0.05; // 5% chance per day someone has a crisis
+  const statusOptions = [
+    { name: 'Sick Kid', days: 3, msg: 'has a sick kid and is out for 3 days.' },
+    { name: 'Vacation', days: 7, msg: 'is on vacation for a week!' },
+    { name: 'Flu', days: 4, msg: 'caught the flu. Out for 4 days.' },
+    { name: 'Family Crisis', days: 5, msg: 'has a family emergency. Out for 5 days.' },
+    { name: 'Burnout', days: 2, msg: 'is feeling burnt out. Taking 2 mental health days.' },
+  ];
+
+  HEROES.forEach(h => {
+    const hs = S.heroState[h.id];
+    if (!hs || !hs.owned) return;
+
+    // Handle existing absences
+    if (hs.absenceDays > 0) {
+      hs.absenceDays--;
+      if (hs.absenceDays <= 0) {
+        if (hs.status === 'Training' && hs.pendingSkill) {
+          if (!h.skills) h.skills = [];
+          h.skills.push(hs.pendingSkill);
+          toast(`🎓 ${h.name} finished training: ${hs.pendingSkill}!`, 'gold');
+          hs.pendingSkill = null;
+        }
+        hs.status = 'Active';
+        hs.absenceDays = 0;
+        toast(`✅ ${h.name} is back online!`, 'green');
+        renderSquad();
+      }
+    }
+
+    // Roll for new crisis if active
+    if (hs.status === 'Active' && Math.random() < CRISIS_CHANCE) {
+      const crisis = statusOptions[Math.floor(Math.random() * statusOptions.length)];
+      hs.status = crisis.name;
+      hs.absenceDays = crisis.days;
+      toast(`🚨 ${h.name} ${crisis.msg}`, 'red');
+      SFX.error();
+      renderSquad();
+    }
+
+    // Boredom decay (if active but not worked)
+    if (hs.status === 'Active') {
+      hs.daysSinceLastTask = (hs.daysSinceLastTask || 0) + 1;
+      if (hs.daysSinceLastTask > 5) {
+        const boredomDecay = Math.floor(hs.daysSinceLastTask / 5);
+        hs.morale = Math.max(0, hs.morale - boredomDecay);
+        if (S.gameDay % 5 === 0 && hs.daysSinceLastTask > 10) {
+          toast(`😴 ${h.name} is getting bored...`, 'red');
+        }
+      }
+    }
+
+    // Resignation check
+    if (hs.morale < 25) {
+      const RESIGN_CHANCE = 0.15; // 15% chance per day if very low morale
+      if (Math.random() < RESIGN_CHANCE) {
+        toast(`⚠️ ${h.name} has RESIGNED due to low morale!`, 'red');
+        hs.owned = false;
+        S.heroesOwned--;
+        SFX.error();
+        renderSquad();
+        renderStats();
+        return; // Next hero
+      }
+    }
+  });
+}
+
+function startTraining(heroId) {
+  const h = HEROES.find(x => x.id === heroId);
+  const hs = S.heroState[heroId];
+  if (!h || !hs) return;
+
+  const cost = 2500 * (h.skills.length + 1); // Cost scales with skill count
+  if (S.tickets < cost) {
+    toast(`Not enough tickets for training! (${fmt(cost)}🎫)`, 'red');
+    SFX.error();
+    return;
+  }
+
+  S.tickets -= cost;
+  hs.status = 'Training';
+  hs.absenceDays = 3; // Training takes 3 days
+  
+  // Pick a new random skill from a global list if they don't have it
+  const potentialSkills = ["Automation", "AI/ML", "Cloud Native", "Security Pro", "Diagnostics", "Process Optimization", "Documentation"];
+  const newSkill = potentialSkills.find(s => !h.skills.includes(s));
+  
+  if (newSkill) {
+    toast(`🎓 ${h.name} started training for: ${newSkill}!`, 'gold');
+    // We'll actually add the skill once training finishes
+    hs.pendingSkill = newSkill;
+  } else {
+    toast(`🎓 ${h.name} is staying sharp!`, 'gold');
+  }
+
+  renderSquad();
+  renderStats();
+  SFX.purchase();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -333,13 +452,49 @@ function recruitHero(id) {
     return;
   }
   S.tickets -= h.recruitCost;
-  S.heroState[id] = { owned: true, level: 1, xp: 0 };
+  S.heroState[id] = { owned: true, level: 1, xp: 0, status: 'Active', morale: 100, absenceDays: 0 };
+  S.applicantPool = S.applicantPool.filter(appId => appId !== id);
   S.heroesOwned++;
   SFX.recruit();
   toast(`🦸 ${h.name} joined your squad!`, 'gold');
   renderSquad();
   renderStats();
   checkAchievements();
+}
+
+function refreshJobBoard(cost = 0) {
+  if (cost > 0 && S.tickets < cost) {
+    SFX.error();
+    toast('Not enough tickets to refresh the board!', 'red');
+    return;
+  }
+  if (cost > 0) S.tickets -= cost;
+  
+  // Find all heroes we don't own yet
+  const unowned = HEROES.filter(h => !(S.heroState[h.id] && S.heroState[h.id].owned));
+  
+  // If we own everyone, don't crash
+  if (unowned.length === 0) {
+    S.applicantPool = [];
+    if (cost > 0) toast('There is no one left to hire!', 'gold');
+    renderSquad();
+    return;
+  }
+  
+  // Pick up to 4 random heroes
+  const poolSize = Math.min(4, unowned.length);
+  S.applicantPool = [];
+  const shuffled = [...unowned].sort(() => 0.5 - Math.random());
+  for (let i = 0; i < poolSize; i++) {
+    S.applicantPool.push(shuffled[i].id);
+  }
+  
+  if (cost > 0) {
+    SFX.purchase();
+    toast('Job board refreshed!', 'green');
+    renderStats();
+  }
+  renderSquad();
 }
 
 function levelUpHero(id) {
@@ -609,22 +764,30 @@ function openDispatchModal() {
     ownedHeroes.forEach(h => {
       const match = calcSkillMatch(h, inc);
       const item = document.createElement('div');
-      item.className = 'dispatch-hero-item';
+      item.className = `dispatch-hero-item ${hs.status !== 'Active' ? 'disabled' : ''}`;
       const skillBadges = (h.skills || []).map(s => {
         const isMatch = (inc.requiredSkills || []).includes(s);
         return `<span class="skill-badge${isMatch ? ' match' : ''}">${s}</span>`;
       }).join('');
+      
+      const isDisabled = hs.status !== 'Active';
+      const statusText = isDisabled ? `<span class="dispatch-status-out">${hs.status}</span>` : '';
+
       item.innerHTML = `
         <span class="dispatch-hero-emoji">${h.emoji}</span>
         <div class="dispatch-hero-info">
-          <div class="dispatch-hero-name">${h.name}</div>
+          <div class="dispatch-hero-name">${h.name} ${statusText}</div>
           <div class="dispatch-hero-role">${h.role}</div>
           <div class="dispatch-skills-row">${skillBadges}</div>
         </div>
         <div class="dispatch-match-label ${match.cls}">${match.label}</div>
-        <button class="btn-dispatch-hero" data-hero="${h.id}">Dispatch</button>
+        <button class="btn-dispatch-hero" data-hero="${h.id}" ${isDisabled ? 'disabled' : ''}>
+          ${isDisabled ? 'Out' : 'Dispatch'}
+        </button>
       `;
-      item.querySelector('.btn-dispatch-hero').addEventListener('click', () => dispatchHeroToIncident(h.id));
+      if (!isDisabled) {
+        item.querySelector('.btn-dispatch-hero').addEventListener('click', () => dispatchHeroToIncident(h.id));
+      }
       heroListEl.appendChild(item);
     });
   }
@@ -648,6 +811,18 @@ function dispatchHeroToIncident(heroId) {
 
   dismissIncident(false, true); // clears banner/modal/timer safely
   S.dispatches++;
+  
+  // Impact morale and track activity
+  const hs = S.heroState[heroId];
+  hs.daysSinceLastTask = 0; // Reset boredom
+
+  if (match.cls === 'weak') {
+    hs.morale = Math.max(0, (hs.morale || 100) - 15);
+    toast(`📉 ${hero.name} is frustrated by the unsuitable task!`, 'red');
+  } else {
+    hs.morale = Math.min(100, (hs.morale || 100) + 5);
+  }
+
   toast(`📡 ${hero.emoji} ${hero.name} dispatched! Resolving...`, 'gold');
 
   const resolveTime = 2000 + Math.random() * 2000;
@@ -816,6 +991,10 @@ function renderStats() {
   document.getElementById('prestige-display').textContent = S.prestiges;
   document.getElementById('prestige-bonus-display').textContent = `×${S.prestigeMultiplier.toFixed(2)}`;
   
+  // Day display (new)
+  const dayEl = document.getElementById('game-day-label');
+  if (dayEl) dayEl.textContent = `Day ${S.gameDay}`;
+
   // Strikes display
   const strikesRow = document.getElementById('strikes-row');
   if (strikesRow) {
@@ -894,10 +1073,17 @@ function renderSquad() {
 
   HEROES.forEach(h => {
     const hs = S.heroState[h.id];
-    const owned = hs && hs.owned;
-    const card  = buildHeroCard(h, hs, owned);
-    if (owned) rosterEl.appendChild(card);
-    else       recruitEl.appendChild(card);
+    if (hs && hs.owned) {
+      const card = buildHeroCard(h, hs, true);
+      rosterEl.appendChild(card);
+    }
+  });
+
+  S.applicantPool.forEach(id => {
+    const h = HEROES.find(x => x.id === id);
+    if (!h) return;
+    const card = buildHeroCard(h, null, false);
+    recruitEl.appendChild(card);
   });
 
   if (rosterEl.children.length === 0) {
@@ -917,13 +1103,19 @@ function buildHeroCard(h, hs, owned) {
   if (owned) {
     const lvl = hs.level;
     const lvlUpCost = Math.floor(h.levelUpBaseCost * Math.pow(1.35, lvl - 1));
+    const trainCost = 2500 * ((h.skills || []).length + 1);
     const cpsContrib = fmtDecimal(h.baseCps * (1 + (lvl - 1) * 0.25));
     const skillBadges = (h.skills || []).map(s => `<span class="skill-badge">${s}</span>`).join('');
+    
+    if (hs.morale === undefined) hs.morale = 100;
+    const moraleColor = hs.morale > 70 ? 'var(--green)' : hs.morale > 30 ? 'var(--gold)' : 'var(--red)';
+    const statusClass = hs.status === 'Active' ? 'status-active' : 'status-out';
+
     card.innerHTML = `
       <div class="hero-card-top">
         <span class="hero-emoji">${h.emoji}</span>
         <div class="hero-meta">
-          <div class="hero-card-name">${h.name}</div>
+          <div class="hero-card-name">${h.name} <span class="hero-status-pill ${statusClass}">${hs.status}</span></div>
           <div class="hero-card-role">${h.role}</div>
           <div class="hero-card-rarity" style="color:${rarityColor}">${h.rarity.toUpperCase()}</div>
         </div>
@@ -931,14 +1123,20 @@ function buildHeroCard(h, hs, owned) {
       <div class="hero-skills-row">${skillBadges}</div>
       <div class="hero-card-stats">
         <div class="hero-stat">Level<span>${lvl}</span></div>
-        <div class="hero-stat">Tickets/sec<span>${cpsContrib}</span></div>
+        <div class="hero-stat">Tickets/sec<span>${hs.status === 'Active' ? cpsContrib : '0'}</span></div>
+      </div>
+      <div class="hero-morale-wrap">
+        <div class="hero-morale-label">Morale: ${hs.morale}%</div>
+        <div class="hero-morale-bar-bg"><div class="hero-morale-bar" style="width:${hs.morale}%; background:${moraleColor}"></div></div>
       </div>
       <div class="hero-lvl-bar-wrap"><div class="hero-lvl-bar" style="width:${Math.min((lvl/20)*100,100)}%"></div></div>
-      <div class="hero-card-actions">
+      <div class="hero-card-actions" style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
         <button class="btn-hero btn-levelup" ${S.tickets >= lvlUpCost ? '' : 'disabled'}>Lvl Up (${fmt(lvlUpCost)}🎫)</button>
+        <button class="btn-hero btn-train" ${S.tickets >= trainCost && hs.status === 'Active' ? '' : 'disabled'}>Train (${fmt(trainCost)}🎫)</button>
       </div>
     `;
     card.querySelector('.btn-levelup').addEventListener('click', () => levelUpHero(h.id));
+    card.querySelector('.btn-train').addEventListener('click', () => startTraining(h.id));
   } else {
     const skillBadges = (h.skills || []).map(s => `<span class="skill-badge">${s}</span>`).join('');
     card.innerHTML = `
@@ -1276,6 +1474,7 @@ function initTabs() {
   // Ensure gameStarted is tracked
   if (!S.gameStarted) S.gameStarted = Date.now();
   if (!S.totalClicks) S.totalClicks = 0;
+  if (!S.applicantPool || S.applicantPool.length === 0) refreshJobBoard(0);
   calcOfflineIncome();
   initTabs();
   loadSoundPref();
@@ -1290,6 +1489,7 @@ function initTabs() {
   }
 
   // Event bindings
+  document.getElementById('btn-refresh-board').addEventListener('click', () => refreshJobBoard(500));
   document.getElementById('main-clicker').addEventListener('click', handleClick);
   document.getElementById('btn-save').addEventListener('click', saveGame);
   document.getElementById('btn-reset').addEventListener('click', resetGame);

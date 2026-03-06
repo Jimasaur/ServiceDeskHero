@@ -40,73 +40,7 @@ window.GAME_DATA = (() => {
   ];
 
   // ── Squad Heroes (with skills) ──
-  const HEROES = [
-    {
-      id: "harold", name: "Harold Bates", role: "Help Desk Harold", emoji: "📞",
-      rarity: "common", specialty: "clerical",
-      baseCps: 0.8, recruitCost: 150, levelUpBaseCost: 100,
-      desc: "Handles password resets in his sleep. The users love him.",
-      skills: ["Clerical Savant", "Customer Service", "Documentation"],
-    },
-    {
-      id: "pat", name: "Pat Nguyen", role: "Network Ninja", emoji: "🌐",
-      rarity: "common", specialty: "networking",
-      baseCps: 1.5, recruitCost: 200, levelUpBaseCost: 150,
-      desc: "Packet wizard. Traces routes like reading a map.",
-      skills: ["Network Expert", "Diagnostics", "Infrastructure"],
-    },
-    {
-      id: "wendy", name: "Wendy Chang", role: "ITSM Oracle", emoji: "📊",
-      rarity: "uncommon", specialty: "process",
-      baseCps: 2.5, recruitCost: 500, levelUpBaseCost: 300,
-      desc: "Turns chaos into process. Every incident has a playbook.",
-      skills: ["Process Optimization", "Compliance", "Clerical Savant"],
-    },
-    {
-      id: "morgan", name: "Morgan Steele", role: "Security Sentinel", emoji: "🔒",
-      rarity: "uncommon", specialty: "security",
-      baseCps: 4, recruitCost: 700, levelUpBaseCost: 400,
-      desc: "Threat hunter. Nothing gets past this firewall.",
-      skills: ["Security Pro", "Threat Hunting", "Compliance"],
-    },
-    {
-      id: "alex", name: "Alex Reyes", role: "Cloud Architect", emoji: "☁️",
-      rarity: "rare", specialty: "cloud",
-      baseCps: 10, recruitCost: 2_500, levelUpBaseCost: 1_200,
-      desc: "Spins up infra in seconds. Your AWS bill is crying.",
-      skills: ["Cloud Native", "Highly Technical", "Infrastructure"],
-    },
-    {
-      id: "taylor", name: "Taylor Brooks", role: "Database Oracle", emoji: "🗄️",
-      rarity: "rare", specialty: "database",
-      baseCps: 12, recruitCost: 4_000, levelUpBaseCost: 2_000,
-      desc: "Optimises queries in their sleep. Index ALL the things.",
-      skills: ["Database Expert", "Highly Technical", "Query Optimization"],
-    },
-    {
-      id: "jordan", name: "Jordan Kim", role: "DevOps Dynamo", emoji: "🚀",
-      rarity: "epic", specialty: "devops",
-      baseCps: 30, recruitCost: 15_000, levelUpBaseCost: 8_000,
-      desc: "CI/CD pipelines, IaC, and zero-downtime deploys.",
-      skills: ["DevOps", "Automation", "Highly Technical"],
-    },
-    {
-      id: "sam", name: "Sam Voss", role: "AI/ML Strategist", emoji: "🧬",
-      rarity: "epic", specialty: "ai",
-      baseCps: 50, recruitCost: 40_000, levelUpBaseCost: 20_000,
-      desc: "Trains models that predict outages before they happen.",
-      skills: ["AI/ML", "Analytics", "Highly Technical"],
-      bonus: { type: "xpBoost", value: 1.5 },
-    },
-    {
-      id: "riley", name: "Riley Cross", role: "Zero-Day Hunter", emoji: "🕵️",
-      rarity: "legendary", specialty: "security",
-      baseCps: 150, recruitCost: 200_000, levelUpBaseCost: 100_000,
-      desc: "Finds vulnerabilities that don't have CVEs yet.",
-      skills: ["Security Pro", "Zero-Day", "Penetration Testing"],
-      bonus: { type: "all", value: 1.25 },
-    },
-  ];
+  const HEROES = window.RECRUIT_POOL || [];
 
   // ── Skill Tree ──
   const SKILLS = [
