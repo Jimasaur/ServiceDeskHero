@@ -1,0 +1,57 @@
+name: Deploy to S3 + CloudFront
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync . s3://www.servicedeskhero.com \
+            --delete \
+            --exclude ".git/*" \
+            --exclude ".github/*" \
+            --cache-control "public, max-age=86400" \
+            --content-type-map /dev/null
+
+      - name: Set correct content types
+        run: |
+          aws s3 cp s3://www.servicedeskhero.com/ s3://www.servicedeskhero.com/ \
+            --recursive \
+            --exclude "*" \
+            --include "*.html" \
+            --content-type "text/html" \
+            --metadata-directive REPLACE \
+            --cache-control "public, max-age=3600"
+          aws s3 cp s3://www.servicedeskhero.com/ s3://www.servicedeskhero.com/ \
+            --recursive \
+            --exclude "*" \
+            --include "*.js" \
+            --content-type "application/javascript" \
+            --metadata-directive REPLACE \
+            --cache-control "public, max-age=86400"
+          aws s3 cp s3://www.servicedeskhero.com/ s3://www.servicedeskhero.com/ \
+            --recursive \
+            --exclude "*" \
+            --include "*.css" \
+            --content-type "text/css" \
+            --metadata-directive REPLACE \
+            --cache-control "public, max-age=86400"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id E1E5FO0J6V9IIP \
+            --paths "/*"
