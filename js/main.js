@@ -222,6 +222,31 @@ function gainTickets(amount) {
   S.tickets += amount;
   S.lifetimeTickets += amount;
   renderStats();
+  updateButtonStates();
+}
+
+function updateButtonStates() {
+  document.querySelectorAll('.upgrade-card').forEach(card => {
+    const id = card.dataset.upgrade;
+    const u = UPGRADES.find(x => x.id === id);
+    if (!u) return;
+    const btn = card.querySelector('.btn-buy');
+    if (btn) btn.disabled = S.tickets < upgradeCost(u);
+  });
+  document.querySelectorAll('.hero-card').forEach(card => {
+    const id = card.dataset.hero;
+    const h = HEROES.find(x => x.id === id);
+    if (!h) return;
+    const hs = S.heroState[id];
+    if (hs && hs.owned) {
+      const lvlUpCost = Math.floor(h.levelUpBaseCost * Math.pow(1.35, hs.level - 1));
+      const btn = card.querySelector('.btn-levelup');
+      if (btn) btn.disabled = S.tickets < lvlUpCost;
+    } else {
+      const btn = card.querySelector('.btn-recruit');
+      if (btn) btn.disabled = S.tickets < h.recruitCost;
+    }
+  });
 }
 
 function gainXp(amount) {
@@ -832,6 +857,7 @@ function renderSquad() {
 function buildHeroCard(h, hs, owned) {
   const card = document.createElement('div');
   card.className = `hero-card ${h.rarity}`;
+  card.dataset.hero = h.id;
 
   const rarityColors = { common:'#9ea5d1', uncommon:'#4ade80', rare:'#3b82f6', epic:'#a78bfa', legendary:'#ffc94b' };
   const rarityColor  = rarityColors[h.rarity] || '#fff';
@@ -1116,7 +1142,13 @@ function loadGame() {
   if (!raw) return;
   try {
     const saved = JSON.parse(raw);
-    S = Object.assign(buildDefaultState(), saved);
+    const defaults = buildDefaultState();
+    // Carefully merge nested objects so we don't overwrite new defaults with undefined
+    const merged = Object.assign({}, defaults, saved);
+    merged.skillMods = Object.assign({}, defaults.skillMods, saved.skillMods || {});
+    merged.heroState = Object.assign({}, defaults.heroState, saved.heroState || {});
+    merged.upgradeOwned = Object.assign({}, defaults.upgradeOwned, saved.upgradeOwned || {});
+    S = merged;
     // Restore non-serializable (timers)
     S.comboTimer = null;
     // Re-apply modifiers from scratch to avoid double-stacking
@@ -1223,9 +1255,11 @@ function initTabs() {
   // Minigame: click button + close/continue
   document.getElementById('btn-minigame-click').addEventListener('click', onMinigameClick);
   document.getElementById('btn-minigame-close').addEventListener('click', closeMinigame);
-  // Stats tab actions
   document.getElementById('btn-share').addEventListener('click', shareStats);
   document.getElementById('btn-export').addEventListener('click', exportSave);
   document.getElementById('btn-import').addEventListener('click', importSave);
   document.getElementById('import-file-input').addEventListener('change', handleImportFile);
+
+  // Auto-save on window close or refresh
+  window.addEventListener('beforeunload', saveGame);
 })();
