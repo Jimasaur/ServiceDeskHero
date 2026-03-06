@@ -1309,6 +1309,43 @@
 .btn-close-help:hover { transform: scale(1.03); filter: brightness(1.1); }
 
 /* ══════════════════════════════════════════
+   FEEDBACK MODAL
+   ══════════════════════════════════════════ */
+.feedback-panel { width: min(620px, 92vw); text-align: left; }
+.feedback-form { display: grid; gap: 12px; }
+.feedback-label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.feedback-input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.28);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+}
+.feedback-textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+.feedback-actions {
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  margin-top: 6px;
+}
+.feedback-status {
+  min-height: 20px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+/* ══════════════════════════════════════════
    ACCESSIBILITY: Reduced Motion
    ══════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {

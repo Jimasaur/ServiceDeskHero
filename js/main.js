@@ -6,6 +6,7 @@
 // ── Wait for constants.js to populate window.GAME_DATA ──
 const { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES } = window.GAME_DATA;
 const SFX = window.SFX;
+const FEEDBACK_ENDPOINT = 'https://xthqp43m7fbaunjuvalsg5qgdm0ooggz.lambda-url.us-east-1.on.aws/';
 
 // ══════════════════════════════════════════════════════════════
 // STATE
@@ -1749,6 +1750,61 @@ function closeHelp() {
   renderOnboarding();
 }
 
+function openFeedback() {
+  document.getElementById('feedback-modal').classList.remove('hidden');
+  document.getElementById('feedback-status').textContent = '';
+}
+
+function closeFeedback() {
+  document.getElementById('feedback-modal').classList.add('hidden');
+}
+
+async function submitFeedback(evt) {
+  evt.preventDefault();
+  const type = document.getElementById('feedback-type').value;
+  const message = document.getElementById('feedback-message').value.trim();
+  const email = document.getElementById('feedback-email').value.trim();
+  const statusEl = document.getElementById('feedback-status');
+  const submitBtn = document.getElementById('btn-submit-feedback');
+
+  if (!message) {
+    statusEl.textContent = 'Please write something first.';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  statusEl.textContent = 'Sending feedback...';
+
+  try {
+    const version = document.getElementById('build-version')?.textContent || 'unknown';
+    const res = await fetch(FEEDBACK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type,
+        message,
+        email,
+        version,
+        page: window.location.pathname,
+        userAgent: navigator.userAgent,
+      }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    document.getElementById('feedback-form').reset();
+    statusEl.textContent = 'Feedback sent. Good. Now we have evidence.';
+    toast('💬 Feedback submitted!', 'green');
+    setTimeout(closeFeedback, 700);
+  } catch (err) {
+    console.error('feedback submit failed', err);
+    statusEl.textContent = 'Could not send feedback right now. Try again later.';
+    toast('Feedback failed to send.', 'red');
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
 // ══════════════════════════════════════════════════════════════
 // SOUND TOGGLE
 // ══════════════════════════════════════════════════════════════
@@ -1897,8 +1953,12 @@ function initTabs() {
   document.getElementById('btn-promote').addEventListener('click', doPromotion);
   document.getElementById('btn-sound').addEventListener('click', toggleSound);
   document.getElementById('btn-help').addEventListener('click', openHelp);
+  document.getElementById('btn-feedback').addEventListener('click', openFeedback);
   document.getElementById('btn-close-help').addEventListener('click', closeHelp);
   document.getElementById('help-overlay').addEventListener('click', closeHelp);
+  document.getElementById('btn-close-feedback').addEventListener('click', closeFeedback);
+  document.getElementById('feedback-overlay').addEventListener('click', closeFeedback);
+  document.getElementById('feedback-form').addEventListener('submit', submitFeedback);
   document.getElementById('btn-dismiss-onboarding').addEventListener('click', () => {
     S.tutorialDismissed = true;
     renderOnboarding();

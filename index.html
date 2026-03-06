@@ -102,6 +102,7 @@
         </div>
       </div>
       <div class="header-right">
+        <button id="btn-feedback" class="btn-hdr" aria-label="Send feedback" title="Send Feedback">💬</button>
         <button id="btn-sound" class="btn-hdr" aria-label="Toggle sound effects" title="Toggle Sound">🔊</button>
         <button id="btn-help" class="btn-hdr" aria-label="How to play" title="How to Play">❓</button>
         <span id="save-indicator" class="save-indicator">💾 Saved</span>
@@ -367,6 +368,39 @@
           </div>
         </div>
         <button id="btn-close-help" class="btn-close-help">Got It — Let’s Cause Some Process Improvement 🚀</button>
+      </div>
+    </div>
+
+    <!-- ========== FEEDBACK MODAL ========== -->
+    <div id="feedback-modal" class="help-modal hidden">
+      <div class="help-overlay" id="feedback-overlay"></div>
+      <div class="help-panel feedback-panel">
+        <h2>💬 Send Feedback</h2>
+        <p class="help-lead">Bug, idea, balance gripe, UX complaint — send it. It goes into the real backlog.</p>
+        <form id="feedback-form" class="feedback-form">
+          <label class="feedback-label">
+            Type
+            <select id="feedback-type" class="feedback-input">
+              <option value="bug">Bug</option>
+              <option value="idea">Idea</option>
+              <option value="balance">Balance</option>
+              <option value="ux">UX</option>
+            </select>
+          </label>
+          <label class="feedback-label">
+            Message
+            <textarea id="feedback-message" class="feedback-input feedback-textarea" maxlength="1500" placeholder="Tell us what broke, what felt weird, or what should exist."></textarea>
+          </label>
+          <label class="feedback-label">
+            Optional contact
+            <input id="feedback-email" class="feedback-input" type="email" maxlength="200" placeholder="you@example.com" />
+          </label>
+          <div class="feedback-actions">
+            <button type="button" id="btn-close-feedback" class="btn-hdr">Cancel</button>
+            <button type="submit" id="btn-submit-feedback" class="btn-close-help">Send Feedback</button>
+          </div>
+          <div id="feedback-status" class="feedback-status"></div>
+        </form>
       </div>
     </div>
 
