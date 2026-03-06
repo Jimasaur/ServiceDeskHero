@@ -6,8 +6,33 @@
     <title>Service Desk Hero — Chuck Sterling's Rise to CIO</title>
     <meta
       name="description"
-      content="Click, automate, and climb the IT ladder from Help Desk Analyst to CIO in this addicting idle clicker game."
+      content="Click, automate, and climb the IT ladder from Help Desk Analyst to CIO in this addicting idle clicker game. Build your squad, resolve incidents, and prove you have what it takes."
     />
+    <link rel="canonical" href="https://www.servicedeskhero.com/" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="assets/favicon.png" />
+    <link rel="apple-touch-icon" href="assets/favicon.png" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#7c5cfc" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Service Desk Hero — Rise to CIO" />
+    <meta property="og:description" content="Click, automate, and climb the IT ladder from Help Desk Analyst to CIO. Build your squad, resolve incidents, master the skill tree." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://www.servicedeskhero.com/" />
+    <meta property="og:image" content="https://www.servicedeskhero.com/assets/og-image.png" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Service Desk Hero — Rise to CIO" />
+    <meta name="twitter:description" content="The idle clicker game for IT pros. Resolve tickets, build your squad, climb to CIO." />
+
+    <!-- Fonts & Styles -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap"
@@ -20,40 +45,42 @@
   </head>
   <body>
     <!-- ========== HEADER ========== -->
-    <header id="game-header">
+    <header id="game-header" role="banner">
       <div class="header-left">
-        <span class="game-logo">🖥️ Service Desk Hero</span>
+        <span class="game-logo" aria-label="Service Desk Hero">🖥️ Service Desk Hero</span>
       </div>
       <div class="header-center">
         <span class="career-title-label">Current Title:</span>
         <span id="career-title" class="career-title-value"
           >Help Desk Analyst</span
         >
-        <div class="career-progress-wrap">
+        <div class="career-progress-wrap" role="progressbar" aria-label="Career progress">
           <div id="career-progress-bar" class="career-progress-bar"></div>
         </div>
       </div>
       <div class="header-right">
+        <button id="btn-sound" class="btn-hdr" aria-label="Toggle sound effects" title="Toggle Sound">🔊</button>
+        <button id="btn-help" class="btn-hdr" aria-label="How to play" title="How to Play">❓</button>
         <span id="save-indicator" class="save-indicator">💾 Saved</span>
-        <button id="btn-save" class="btn-hdr">Save</button>
-        <button id="btn-reset" class="btn-hdr btn-danger">Reset</button>
+        <button id="btn-save" class="btn-hdr" aria-label="Save game">Save</button>
+        <button id="btn-reset" class="btn-hdr btn-danger" aria-label="Reset game">Reset</button>
       </div>
     </header>
 
     <!-- ========== INCIDENT BANNER ========== -->
-    <div id="incident-banner" class="incident-banner hidden">
+    <div id="incident-banner" class="incident-banner hidden" role="alert">
       <div class="incident-inner">
         <span id="incident-icon" class="incident-icon">🚨</span>
         <span id="incident-text" class="incident-text"></span>
-        <button id="incident-resolve" class="btn-incident">RESPOND NOW</button>
+        <button id="incident-resolve" class="btn-incident" aria-label="Respond to incident">RESPOND NOW</button>
         <span id="incident-timer" class="incident-timer"></span>
       </div>
     </div>
 
     <!-- ========== MAIN LAYOUT ========== -->
-    <main id="game-main">
+    <main id="game-main" role="main">
       <!-- ===== LEFT PANEL: Avatar + Clicker + Stats ===== -->
-      <aside id="left-panel">
+      <aside id="left-panel" aria-label="Player stats and clicker">
         <div class="panel avatar-panel">
           <div id="avatar" class="avatar">
             <span class="avatar-initials">CS</span>
@@ -62,7 +89,7 @@
           </div>
           <div class="hero-info">
             <h1 id="hero-name">Chuck Sterling</h1>
-            <div class="xp-bar-wrap">
+            <div class="xp-bar-wrap" role="progressbar" aria-label="Experience points">
               <div id="xp-bar" class="xp-bar"></div>
               <span id="xp-label" class="xp-label">0 / 100 XP</span>
             </div>
@@ -72,12 +99,12 @@
 
         <div class="panel clicker-panel">
           <div class="combo-area">
-            <div id="combo-meter" class="combo-meter hidden">
+            <div id="combo-meter" class="combo-meter hidden" aria-live="polite">
               <span class="combo-label">COMBO</span>
               <span id="combo-count">x1</span>
             </div>
           </div>
-          <button id="main-clicker" class="main-clicker-btn">
+          <button id="main-clicker" class="main-clicker-btn" aria-label="Resolve a ticket">
             <span class="btn-icon">🎫</span>
             <span class="btn-text">Resolve Ticket</span>
             <span id="click-power-label" class="click-power">+1 ticket</span>
@@ -110,27 +137,26 @@
           </div>
         </div>
 
-        <div class="panel promotion-panel" id="promotion-panel">
+        <div class="panel promotion-panel hidden" id="promotion-panel">
           <h2 class="promo-title">🚀 Promotion Ready!</h2>
           <p id="promo-description" class="promo-desc"></p>
-          <button id="btn-promote" class="btn-promote">Accept Promotion</button>
+          <button id="btn-promote" class="btn-promote" aria-label="Accept promotion">Accept Promotion</button>
         </div>
       </aside>
 
       <!-- ===== CENTER PANEL: Tabbed Content ===== -->
-      <section id="center-panel">
+      <section id="center-panel" aria-label="Game tabs">
         <!-- Tab Nav -->
-        <div class="tab-nav">
-          <button class="tab-btn active" data-tab="squad">👥 Squad</button>
-          <button class="tab-btn" data-tab="upgrades">🛒 Upgrades</button>
-          <button class="tab-btn" data-tab="skills">🧠 Skills</button>
-          <button class="tab-btn" data-tab="achievements">
-            🏅 Achievements
-          </button>
+        <div class="tab-nav" role="tablist" aria-label="Game sections">
+          <button class="tab-btn active" data-tab="squad" role="tab" aria-selected="true" aria-controls="tab-squad">👥 Squad</button>
+          <button class="tab-btn" data-tab="upgrades" role="tab" aria-selected="false" aria-controls="tab-upgrades">🛒 Upgrades</button>
+          <button class="tab-btn" data-tab="skills" role="tab" aria-selected="false" aria-controls="tab-skills">🧠 Skills</button>
+          <button class="tab-btn" data-tab="achievements" role="tab" aria-selected="false" aria-controls="tab-achievements">🏅 Achievements</button>
+          <button class="tab-btn" data-tab="stats" role="tab" aria-selected="false" aria-controls="tab-stats">📊 Stats</button>
         </div>
 
         <!-- ── SQUAD TAB ── -->
-        <div class="tab-pane active" id="tab-squad">
+        <div class="tab-pane active" id="tab-squad" role="tabpanel">
           <div class="tab-header">
             <h2>Your Squad</h2>
             <p class="tab-desc">
@@ -150,7 +176,7 @@
         </div>
 
         <!-- ── UPGRADES TAB ── -->
-        <div class="tab-pane" id="tab-upgrades">
+        <div class="tab-pane" id="tab-upgrades" role="tabpanel">
           <div class="tab-header">
             <h2>Command Center Upgrades</h2>
             <p class="tab-desc">
@@ -162,7 +188,7 @@
         </div>
 
         <!-- ── SKILLS TAB ── -->
-        <div class="tab-pane" id="tab-skills">
+        <div class="tab-pane" id="tab-skills" role="tabpanel">
           <div class="tab-header">
             <h2>Skill Tree</h2>
             <p class="tab-desc">
@@ -177,7 +203,7 @@
         </div>
 
         <!-- ── ACHIEVEMENTS TAB ── -->
-        <div class="tab-pane" id="tab-achievements">
+        <div class="tab-pane" id="tab-achievements" role="tabpanel">
           <div class="tab-header">
             <h2>Achievements</h2>
             <p class="tab-desc">
@@ -185,6 +211,23 @@
             </p>
           </div>
           <div id="achievements-grid" class="achievements-grid"></div>
+        </div>
+
+        <!-- ── STATS TAB ── -->
+        <div class="tab-pane" id="tab-stats" role="tabpanel">
+          <div class="tab-header">
+            <h2>Career Statistics</h2>
+            <p class="tab-desc">
+              Your complete career history and play stats.
+            </p>
+          </div>
+          <div id="stats-content" class="stats-content"></div>
+          <div class="stats-actions">
+            <button id="btn-share" class="btn-share">📋 Copy Stats to Clipboard</button>
+            <button id="btn-export" class="btn-export">💾 Export Save</button>
+            <button id="btn-import" class="btn-import">📂 Import Save</button>
+          </div>
+          <input type="file" id="import-file-input" accept=".json,.txt" style="display:none" />
         </div>
       </section>
     </main>
@@ -194,6 +237,47 @@
 
     <!-- ========== FLOATING CLICK NUMBERS ========== -->
     <div id="float-layer" class="float-layer"></div>
+
+    <!-- ========== HOW TO PLAY MODAL ========== -->
+    <div id="help-modal" class="help-modal hidden">
+      <div class="help-overlay" id="help-overlay"></div>
+      <div class="help-panel">
+        <h2>🖥️ How to Play</h2>
+        <div class="help-grid">
+          <div class="help-card">
+            <span class="help-card-icon">🎫</span>
+            <h3>Click to Resolve</h3>
+            <p>Click the <strong>Resolve Ticket</strong> button to earn tickets. Click fast to build combos for bonus multipliers!</p>
+          </div>
+          <div class="help-card">
+            <span class="help-card-icon">👥</span>
+            <h3>Build Your Squad</h3>
+            <p>Spend tickets to recruit <strong>IT heroes</strong> who auto-resolve tickets for you. Level them up for more output.</p>
+          </div>
+          <div class="help-card">
+            <span class="help-card-icon">🛒</span>
+            <h3>Buy Upgrades</h3>
+            <p>Invest in <strong>tools &amp; automation</strong> — from macro libraries to AI platforms — to multiply your throughput.</p>
+          </div>
+          <div class="help-card">
+            <span class="help-card-icon">🚨</span>
+            <h3>Handle Incidents</h3>
+            <p><strong>Random incidents</strong> pop up with time limits. Dispatch heroes or handle them yourself in a click minigame for big rewards!</p>
+          </div>
+          <div class="help-card">
+            <span class="help-card-icon">🧠</span>
+            <h3>Unlock Skills</h3>
+            <p>Earn <strong>Skill Points</strong> on level-up and spend them in the Skill Tree for powerful permanent bonuses.</p>
+          </div>
+          <div class="help-card">
+            <span class="help-card-icon">🚀</span>
+            <h3>Get Promoted</h3>
+            <p>Hit lifetime ticket milestones to <strong>promote</strong>. Each promotion resets tickets but gives a permanent multiplier. Climb to CIO!</p>
+          </div>
+        </div>
+        <button id="btn-close-help" class="btn-close-help">Got It — Let's Go! 🚀</button>
+      </div>
+    </div>
 
     <!-- ========== DISPATCH MODAL ========== -->
   <div id="dispatch-modal" class="dispatch-modal hidden">
@@ -242,7 +326,7 @@
           <div id="minigame-bar-label" class="minigame-bar-label">0%</div>
         </div>
 
-        <button id="btn-minigame-click" class="btn-minigame-click">
+        <button id="btn-minigame-click" class="btn-minigame-click" aria-label="Click to resolve incident">
           <span class="minigame-click-label">💻<br>RESOLVE!</span>
         </button>
 
@@ -262,6 +346,7 @@
   </div>
 
   <!-- ========== JS MODULES ========== -->
+  <script src="js/audio.js"></script>
   <script type="module" src="js/constants.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>

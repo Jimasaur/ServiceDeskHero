@@ -5,6 +5,7 @@
 
 // ── Wait for constants.js to populate window.GAME_DATA ──
 const { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS } = window.GAME_DATA;
+const SFX = window.SFX;
 
 // ══════════════════════════════════════════════════════════════
 // STATE
@@ -169,13 +170,16 @@ function calcXpGain(tickets) {
 function handleClick(evt) {
   const sm = S.skillMods;
   let amount = calcPerClick();
+  S.totalClicks = (S.totalClicks || 0) + 1;
 
   // Critical click
   if (sm.critChance > 0 && Math.random() < sm.critChance) {
     amount *= sm.critMult;
     floatNumber(`💥 CRIT! +${fmt(amount)}`, evt.clientX, evt.clientY);
+    SFX.crit();
   } else {
     floatNumber(`+${fmt(amount)}`, evt.clientX, evt.clientY);
+    SFX.click();
   }
 
   // Combo
@@ -183,6 +187,7 @@ function handleClick(evt) {
   if (S.combo > S.maxCombo) S.maxCombo = S.combo;
   const comboMult = 1 + (S.combo - 1) * 0.02;
   amount *= comboMult;
+  if (S.combo > 1 && S.combo % 10 === 0) SFX.comboMilestone();
 
   // Reset combo timer
   clearTimeout(S.comboTimer);
@@ -232,6 +237,7 @@ function gainXp(amount) {
 }
 
 function onLevelUp() {
+  SFX.levelUp();
   toast(`🎉 LEVEL UP! Now Level ${S.level}. +1 Skill Point!`, 'gold');
   const btn = document.getElementById('main-clicker');
   btn.classList.add('level-up-flash');
@@ -274,6 +280,7 @@ function buyUpgrade(id) {
   if (S.tickets < cost) {
     const card = document.querySelector(`[data-upgrade="${id}"]`);
     if (card) { card.classList.remove('shake-animate'); void card.offsetWidth; card.classList.add('shake-animate'); }
+    SFX.error();
     toast('Not enough tickets!', 'red');
     return;
   }
@@ -281,6 +288,7 @@ function buyUpgrade(id) {
   S.upgradeOwned[u.id] = (S.upgradeOwned[u.id] || 0) + 1;
   S.upgradesPurchased++;
   if (u.perClickBonus) S.basePerClick += u.perClickBonus;
+  SFX.purchase();
   toast(`✅ Purchased: ${u.name}`, 'green');
   renderUpgrades();
   renderStats();
@@ -294,12 +302,14 @@ function recruitHero(id) {
   const h = HEROES.find(x => x.id === id);
   if (!h) return;
   if (S.tickets < h.recruitCost) {
+    SFX.error();
     toast('Not enough tickets to recruit!', 'red');
     return;
   }
   S.tickets -= h.recruitCost;
   S.heroState[id] = { owned: true, level: 1, xp: 0 };
   S.heroesOwned++;
+  SFX.recruit();
   toast(`🦸 ${h.name} joined your squad!`, 'gold');
   renderSquad();
   renderStats();
@@ -330,11 +340,12 @@ function buySkill(id) {
   if (!skill) return;
   if (S.unlockedSkills.includes(id)) { toast('Already unlocked!'); return; }
   const prereqsMet = skill.requires.every(r => S.unlockedSkills.includes(r));
-  if (!prereqsMet) { toast('Unlock prerequisites first!', 'red'); return; }
-  if (S.skillPoints < skill.cost) { toast('Not enough Skill Points!', 'red'); return; }
+  if (!prereqsMet) { SFX.error(); toast('Unlock prerequisites first!', 'red'); return; }
+  if (S.skillPoints < skill.cost) { SFX.error(); toast('Not enough Skill Points!', 'red'); return; }
   S.skillPoints -= skill.cost;
   S.unlockedSkills.push(id);
   applySkillEffect(skill);
+  SFX.skillUnlock();
   toast(`🧠 Skill Unlocked: ${skill.name}!`, 'gold');
   const node = document.querySelector(`[data-skill="${id}"]`);
   if (node) {
@@ -391,6 +402,7 @@ function checkAchievements() {
     if (current >= a.goal) {
       S.achievedIds.push(a.id);
       applyAchievementBonus(a);
+      SFX.achievement();
       toast(`🏅 Achievement Unlocked: ${a.name}! (${a.reward})`, 'gold');
       const card = document.querySelector(`[data-achievement="${a.id}"]`);
       if (card) { card.classList.add('achieved', 'ach-unlock-flash'); }
@@ -454,6 +466,7 @@ function doPromotion() {
   S.basePerSec = 0;
   reapplyAllSkills();
   reapplyAllAchievements();
+  SFX.promotion();
   toast(`🚀 PROMOTED to ${nextTier.icon} ${nextTier.title}! Bonus: ×${nextTier.prestigeBonus}`, 'gold');
   if (S.careerTier === CAREER.length - 1) {
     toast('🏆 YOU ARE THE CIO! The ultimate achievement unlocked!', 'gold');
@@ -477,11 +490,11 @@ function triggerIncident() {
   document.getElementById('incident-text').textContent  = inc.title + ' — Tap RESPOND NOW!';
   document.getElementById('incident-timer').textContent = `${inc.timeLimit}s`;
   banner.classList.remove('hidden');
+  SFX.incident();
   incidentCountdown = setInterval(() => {
     if (!activeIncident) { clearInterval(incidentCountdown); return; }
     activeIncident.timeLeft--;
     document.getElementById('incident-timer').textContent = `${activeIncident.timeLeft}s`;
-    // Also sync dispatch modal countdown
     const cn = document.getElementById('dispatch-countdown-num');
     if (cn) cn.textContent = activeIncident.timeLeft;
     if (activeIncident.timeLeft <= 0) dismissIncident(false);
@@ -644,6 +657,7 @@ function onMinigameClick() {
   if (!mgState || mgState.done) return;
   mgState.clicksMade++;
   mgState.progress = Math.min(mgState.clicksMade / mgState.clicksNeeded, 1);
+  SFX.minigameClick();
   const pct = Math.round(mgState.progress * 100);
   document.getElementById('minigame-bar').style.width     = pct + '%';
   document.getElementById('minigame-bar-label').textContent = pct + '%';
@@ -674,16 +688,19 @@ function endMinigame(success) {
     emojiEl.textContent = '🎉'; titleEl.textContent = 'INCIDENT RESOLVED!';
     titleEl.className = 'minigame-result-title success';
     document.getElementById('minigame-result-reward').textContent = `+${fmt(reward)} tickets earned!`;
+    SFX.minigameWin();
   } else if (mgState.progress >= 0.5) {
     emojiEl.textContent = '😅'; titleEl.textContent = 'Partially Resolved';
     titleEl.className = 'minigame-result-title success';
     document.getElementById('minigame-result-reward').textContent =
       `Salvaged +${fmt(reward)} tickets (${Math.round(mgState.progress*100)}% complete)`;
+    SFX.minigameWin();
   } else {
     emojiEl.textContent = '💀'; titleEl.textContent = 'INCIDENT FAILED!';
     titleEl.className = 'minigame-result-title failed';
     document.getElementById('minigame-result-reward').textContent =
       `Only ${Math.round(mgState.progress*100)}% resolved. No reward.`;
+    SFX.minigameFail();
   }
 
   if (reward > 0) { gainTickets(reward); gainXp(calcXpGain(reward)); }
@@ -936,6 +953,139 @@ function updateAchievementProgress(a, current) {
   if (lbl) lbl.textContent = `${fmt(current)} / ${fmt(a.goal)}`;
 }
 
+// ══════════════════════════════════════════════════════════════
+// STATS TAB
+// ══════════════════════════════════════════════════════════════
+function renderStatsTab() {
+  const el = document.getElementById('stats-content');
+  if (!el) return;
+  const tier = CAREER[S.careerTier];
+  const ps = calcPerSec();
+  const pc = calcPerClick();
+  const totalClicks = S.totalClicks || 0;
+  const playTime = getPlayTimeStr();
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card"><span class="stat-card-icon">🖥️</span><div class="stat-card-label">Current Title</div><div class="stat-card-value">${tier.icon} ${tier.title}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">⭐</span><div class="stat-card-label">Level</div><div class="stat-card-value">${S.level}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🎫</span><div class="stat-card-label">Current Tickets</div><div class="stat-card-value">${fmt(S.tickets)}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">📊</span><div class="stat-card-label">Lifetime Tickets</div><div class="stat-card-value">${fmt(S.lifetimeTickets)}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🖱️</span><div class="stat-card-label">Total Clicks</div><div class="stat-card-value">${fmt(totalClicks)}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">⚡</span><div class="stat-card-label">Per Click</div><div class="stat-card-value">${fmtDecimal(pc)}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🔄</span><div class="stat-card-label">Per Second</div><div class="stat-card-value">${fmtDecimal(ps)}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🏆</span><div class="stat-card-label">Promotions</div><div class="stat-card-value">${S.prestiges}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🔥</span><div class="stat-card-label">Best Combo</div><div class="stat-card-value">×${S.maxCombo}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🚨</span><div class="stat-card-label">Incidents Resolved</div><div class="stat-card-value">${S.incidentsResolved}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">📡</span><div class="stat-card-label">Dispatches</div><div class="stat-card-value">${S.dispatches}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">👥</span><div class="stat-card-label">Heroes Recruited</div><div class="stat-card-value">${S.heroesOwned} / ${HEROES.length}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🛒</span><div class="stat-card-label">Upgrades Purchased</div><div class="stat-card-value">${S.upgradesPurchased}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🧠</span><div class="stat-card-label">Skills Unlocked</div><div class="stat-card-value">${S.unlockedSkills.length} / ${SKILLS.length}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🏅</span><div class="stat-card-label">Achievements</div><div class="stat-card-value">${S.achievedIds.length} / ${ACHIEVEMENTS.length}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">⏱️</span><div class="stat-card-label">Play Time</div><div class="stat-card-value">${playTime}</div></div>
+    </div>
+  `;
+}
+
+function getPlayTimeStr() {
+  const started = S.gameStarted || Date.now();
+  const ms = Date.now() - started;
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// EXPORT / IMPORT / SHARE
+// ══════════════════════════════════════════════════════════════
+function exportSave() {
+  saveGame();
+  const data = localStorage.getItem(SAVE_KEY);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `servicedeskhero_save_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('💾 Save exported!', 'green');
+}
+
+function importSave() {
+  document.getElementById('import-file-input').click();
+}
+
+function handleImportFile(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.lifetimeTickets && data.lifetimeTickets !== 0) throw new Error('Invalid save');
+      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+      loadGame();
+      calcOfflineIncome();
+      renderAll();
+      toast('📂 Save imported successfully!', 'green');
+    } catch (err) {
+      toast('❌ Invalid save file!', 'red');
+    }
+  };
+  reader.readAsText(file);
+  evt.target.value = '';
+}
+
+function shareStats() {
+  const tier = CAREER[S.careerTier];
+  const ps = calcPerSec();
+  const text = [
+    `🖥️ Service Desk Hero — Career Stats`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `${tier.icon} Title: ${tier.title}`,
+    `⭐ Level: ${S.level}`,
+    `🏆 Promotions: ${S.prestiges}`,
+    `🎫 Lifetime Tickets: ${fmt(S.lifetimeTickets)}`,
+    `⚡ Tickets/sec: ${fmtDecimal(ps)}`,
+    `🔥 Best Combo: ×${S.maxCombo}`,
+    `🚨 Incidents Resolved: ${S.incidentsResolved}`,
+    `🏅 Achievements: ${S.achievedIds.length}/${ACHIEVEMENTS.length}`,
+    ``,
+    `Play at www.servicedeskhero.com`
+  ].join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    toast('📋 Stats copied to clipboard!', 'green');
+  }).catch(() => {
+    toast('❌ Could not copy to clipboard', 'red');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// HELP MODAL
+// ══════════════════════════════════════════════════════════════
+function openHelp() {
+  document.getElementById('help-modal').classList.remove('hidden');
+}
+function closeHelp() {
+  document.getElementById('help-modal').classList.add('hidden');
+}
+
+// ══════════════════════════════════════════════════════════════
+// SOUND TOGGLE
+// ══════════════════════════════════════════════════════════════
+function toggleSound() {
+  const on = SFX.toggle();
+  document.getElementById('btn-sound').textContent = on ? '🔊' : '🔇';
+  localStorage.setItem('sdh_sound', on ? '1' : '0');
+}
+
+function loadSoundPref() {
+  const pref = localStorage.getItem('sdh_sound');
+  if (pref === '0') {
+    SFX.enabled = false;
+    document.getElementById('btn-sound').textContent = '🔇';
+  }
+}
+
 function renderAll() {
   renderStats();
   renderXpBar();
@@ -943,6 +1093,7 @@ function renderAll() {
   renderSquad();
   renderSkills();
   renderAchievements();
+  renderStatsTab();
   checkPromotionReady();
 }
 
@@ -1019,15 +1170,17 @@ setInterval(saveGame, 30_000);
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
       document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
       // Re-render active tab for freshness
       if (btn.dataset.tab === 'squad')        renderSquad();
       if (btn.dataset.tab === 'upgrades')     renderUpgrades();
       if (btn.dataset.tab === 'skills')       renderSkills();
       if (btn.dataset.tab === 'achievements') renderAchievements();
+      if (btn.dataset.tab === 'stats')        renderStatsTab();
     });
   });
 }
@@ -1037,17 +1190,31 @@ function initTabs() {
 // ══════════════════════════════════════════════════════════════
 (function init() {
   loadGame();
+  // Ensure gameStarted is tracked
+  if (!S.gameStarted) S.gameStarted = Date.now();
+  if (!S.totalClicks) S.totalClicks = 0;
   calcOfflineIncome();
   initTabs();
+  loadSoundPref();
   renderAll();
   startTick();
   scheduleNextIncident();
+
+  // Show help on first visit
+  if (!localStorage.getItem('sdh_seen_help')) {
+    openHelp();
+    localStorage.setItem('sdh_seen_help', '1');
+  }
 
   // Event bindings
   document.getElementById('main-clicker').addEventListener('click', handleClick);
   document.getElementById('btn-save').addEventListener('click', saveGame);
   document.getElementById('btn-reset').addEventListener('click', resetGame);
   document.getElementById('btn-promote').addEventListener('click', doPromotion);
+  document.getElementById('btn-sound').addEventListener('click', toggleSound);
+  document.getElementById('btn-help').addEventListener('click', openHelp);
+  document.getElementById('btn-close-help').addEventListener('click', closeHelp);
+  document.getElementById('help-overlay').addEventListener('click', closeHelp);
   // Incident: RESPOND NOW opens dispatch modal
   document.getElementById('incident-resolve').addEventListener('click', openDispatchModal);
   // Dispatch modal: self-handle + overlay close
@@ -1056,4 +1223,9 @@ function initTabs() {
   // Minigame: click button + close/continue
   document.getElementById('btn-minigame-click').addEventListener('click', onMinigameClick);
   document.getElementById('btn-minigame-close').addEventListener('click', closeMinigame);
+  // Stats tab actions
+  document.getElementById('btn-share').addEventListener('click', shareStats);
+  document.getElementById('btn-export').addEventListener('click', exportSave);
+  document.getElementById('btn-import').addEventListener('click', importSave);
+  document.getElementById('import-file-input').addEventListener('change', handleImportFile);
 })();
