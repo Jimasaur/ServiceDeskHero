@@ -170,14 +170,22 @@
           </div>
           <div id="squad-roster" class="squad-roster"></div>
 
-          <div class="squad-bench-header" style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <h3>Available Recruits</h3>
-              <p class="tab-desc">
-                Hire new heroes. Not finding what you need? Refresh the job board!
-              </p>
+          <div class="squad-bench-header" style="display:flex; justify-content:space-between; align-items:center; margin-top: 1.5rem;">
+            <div style="display:flex; align-items:center; gap: 12px;">
+              <h3 style="margin:0;">Available Recruits</h3>
+              <button id="btn-refresh-board" style="
+                padding: 4px 10px;
+                font-size: 0.75rem;
+                background: rgba(124,92,252,0.15);
+                border: 1px solid rgba(124,92,252,0.3);
+                color: #c4b5fd;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.15s ease;
+                white-space: nowrap;
+              " onmouseover="this.style.background='rgba(124,92,252,0.3)'" onmouseout="this.style.background='rgba(124,92,252,0.15)'"
+              >🔄 Refresh (500🎫)</button>
             </div>
-            <button id="btn-refresh-board" class="btn-hero btn-levelup" style="padding: 8px 16px;">Refresh Board (500🎫)</button>
           </div>
           <div id="recruit-roster" class="recruit-roster"></div>
         </div>

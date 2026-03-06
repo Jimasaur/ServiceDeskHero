@@ -762,6 +762,7 @@ function openDispatchModal() {
     heroListEl.innerHTML = '<div class="dispatch-no-heroes">No heroes recruited yet — handle it yourself or recruit from the Squad tab first!</div>';
   } else {
     ownedHeroes.forEach(h => {
+      const hs = S.heroState[h.id] || { status: 'Active' };
       const match = calcSkillMatch(h, inc);
       const item = document.createElement('div');
       item.className = `dispatch-hero-item ${hs.status !== 'Active' ? 'disabled' : ''}`;
