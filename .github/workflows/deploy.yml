@@ -23,8 +23,7 @@ jobs:
             --delete \
             --exclude ".git/*" \
             --exclude ".github/*" \
-            --cache-control "public, max-age=86400" \
-            --content-type-map /dev/null
+            --cache-control "public, max-age=86400"
 
       - name: Set correct content types
         run: |
