@@ -1492,6 +1492,36 @@
   letter-spacing: 0.02em;
 }
 
+.office-owned-wrap {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,201,75,0.18);
+  background: linear-gradient(135deg, rgba(255,201,75,0.06), rgba(124,92,252,0.08));
+}
+.office-owned-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--gold);
+}
+.office-owned-list {
+  display: grid;
+  gap: 10px;
+}
+.office-owned-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid rgba(255,255,255,0.05);
+  color: var(--text-dim);
+}
+.office-owned-item strong { color: var(--text); display:block; margin-bottom: 2px; }
+.office-owned-icon { font-size: 1.2rem; line-height: 1; }
+
 /* ══════════════════════════════════════════
    FEEDBACK MODAL
    ══════════════════════════════════════════ */

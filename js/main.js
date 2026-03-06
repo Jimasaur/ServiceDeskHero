@@ -1891,6 +1891,7 @@ function renderStatsTab() {
   const pc = calcPerClick();
   const totalClicks = S.totalClicks || 0;
   const playTime = getPlayTimeStr();
+  const officePerks = (S.officePerksChosen || []).map(id => OFFICE_UPGRADES.find(x => x.id === id)).filter(Boolean);
   el.innerHTML = `
     <div class="stats-grid">
       <div class="stat-card"><span class="stat-card-icon">🖥️</span><div class="stat-card-label">Current Title</div><div class="stat-card-value">${tier.icon} ${tier.title}</div></div>
@@ -1901,7 +1902,7 @@ function renderStatsTab() {
       <div class="stat-card"><span class="stat-card-icon">⚡</span><div class="stat-card-label">Per Click</div><div class="stat-card-value">${fmtDecimal(pc)}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🔄</span><div class="stat-card-label">Per Second</div><div class="stat-card-value">${fmtDecimal(ps)}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🏆</span><div class="stat-card-label">Promotions</div><div class="stat-card-value">${S.prestiges}</div></div>
-      <div class="stat-card"><span class="stat-card-icon">🪑</span><div class="stat-card-label">Office Upgrades</div><div class="stat-card-value">${(S.officePerksChosen || []).length}</div></div>
+      <div class="stat-card"><span class="stat-card-icon">🪑</span><div class="stat-card-label">Office Upgrades</div><div class="stat-card-value">${officePerks.length}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🔥</span><div class="stat-card-label">Best Combo</div><div class="stat-card-value">×${S.maxCombo}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🚨</span><div class="stat-card-label">Incidents Resolved</div><div class="stat-card-value">${S.incidentsResolved}</div></div>
       <div class="stat-card"><span class="stat-card-icon">📡</span><div class="stat-card-label">Dispatches</div><div class="stat-card-value">${S.dispatches}</div></div>
@@ -1911,6 +1912,22 @@ function renderStatsTab() {
       <div class="stat-card"><span class="stat-card-icon">🏅</span><div class="stat-card-label">Achievements</div><div class="stat-card-value">${S.achievedIds.length} / ${ACHIEVEMENTS.length}</div></div>
       <div class="stat-card"><span class="stat-card-icon">⏱️</span><div class="stat-card-label">Play Time</div><div class="stat-card-value">${playTime}</div></div>
     </div>
+    ${officePerks.length ? `
+      <div class="office-owned-wrap">
+        <h3 class="office-owned-title">🏢 Office Upgrades</h3>
+        <div class="office-owned-list">
+          ${officePerks.map(perk => `
+            <div class="office-owned-item">
+              <span class="office-owned-icon">${perk.icon}</span>
+              <div>
+                <strong>${perk.name}</strong>
+                <div>${perk.effectText}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
   `;
 }
 
