@@ -134,6 +134,9 @@
               <span>⚡ Prestige Bonus</span
               ><strong id="prestige-bonus-display">×1.0</strong>
             </div>
+            <div class="stat-row strikes-row" id="strikes-row" style="color:var(--red); display:none; border-top:1px solid rgba(248,113,113,0.3); padding-top:8px; margin-top:8px;">
+              <span>❌ Strikes</span><strong id="strikes-display">0 / 3</strong>
+            </div>
           </div>
         </div>
 
@@ -276,6 +279,25 @@
           </div>
         </div>
         <button id="btn-close-help" class="btn-close-help">Got It — Let's Go! 🚀</button>
+      </div>
+    </div>
+
+    <!-- ========== FIRED MODAL ========== -->
+    <div id="fired-modal" class="help-modal hidden">
+      <div class="help-overlay"></div>
+      <div class="help-panel" style="border-color: var(--red); box-shadow: 0 0 80px rgba(248,113,113,0.3), 0 40px 80px rgba(0,0,0,0.8);">
+        <h2 style="color: var(--red); font-size: 2rem;">💀 YOU'RE FIRED!</h2>
+        <p style="font-size: 1.1rem; color: var(--text-muted); margin-bottom: 24px;">You accrued 3 strikes and failed to handle critical incidents properly. HR has packed your desk.</p>
+        <div style="background: rgba(248,113,113,0.1); padding: 16px; border-radius: var(--radius-md); border: 1px solid rgba(248,113,113,0.3); margin-bottom: 24px;">
+          <h3 style="color: var(--text); margin-bottom: 8px;">Consequences:</h3>
+          <ul style="color: var(--text-dim); text-align: left; padding-left: 20px; font-size: 0.9rem;">
+            <li>All tickets, squad members, and upgrades lost.</li>
+            <li>Current level and prestige multipliers are maintained.</li>
+            <li>Unlocked skills and achievements are kept.</li>
+            <li>You must start climbing the ladder again.</li>
+          </ul>
+        </div>
+        <button id="btn-accept-fired" class="btn-close-help" style="background: linear-gradient(135deg, var(--red), darkred);">Pack My Desk</button>
       </div>
     </div>
 

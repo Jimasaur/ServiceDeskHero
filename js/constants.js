@@ -4,16 +4,23 @@
 
 window.GAME_DATA = (() => {
 
-  // ── Career Tiers ──
+  // ── Career Tiers (Expanded 14-tier pyramid) ──
+  // The XP required scales steeply so that reaching CIO is a multi-hour commitment.
   const CAREER = [
-    { id: 0, title: "Help Desk Analyst",      xpRequired: 500,      prestigeBonus: 1.0,  icon: "🖥️" },
-    { id: 1, title: "IT Support Specialist",  xpRequired: 2_000,    prestigeBonus: 1.25, icon: "🔧" },
-    { id: 2, title: "Sr. Support Engineer",   xpRequired: 7_500,    prestigeBonus: 1.6,  icon: "⚙️" },
-    { id: 3, title: "IT Team Lead",           xpRequired: 25_000,   prestigeBonus: 2.0,  icon: "👔" },
-    { id: 4, title: "IT Manager",             xpRequired: 100_000,  prestigeBonus: 2.75, icon: "📊" },
-    { id: 5, title: "Director of IT",         xpRequired: 400_000,  prestigeBonus: 3.75, icon: "🏢" },
-    { id: 6, title: "VP of Technology",       xpRequired: 1_500_000,prestigeBonus: 5.5,  icon: "🚀" },
-    { id: 7, title: "CIO",                    xpRequired: Infinity,  prestigeBonus: 8.0,  icon: "🏆" },
+    { id: 0, title: "Analyst I",              xpRequired: 1_000,          prestigeBonus: 1.0,   icon: "🔋" },
+    { id: 1, title: "Analyst II",             xpRequired: 3_500,          prestigeBonus: 1.15,  icon: "🔧" },
+    { id: 2, title: "Analyst III",            xpRequired: 10_000,         prestigeBonus: 1.35,  icon: "⚙️" },
+    { id: 3, title: "Analyst IV",             xpRequired: 25_000,         prestigeBonus: 1.6,   icon: "🛠️" },
+    { id: 4, title: "Analyst V",              xpRequired: 60_000,         prestigeBonus: 1.9,   icon: "🖥️" },
+    { id: 5, title: "Team Lead",              xpRequired: 150_000,        prestigeBonus: 2.25,  icon: "👔" },
+    { id: 6, title: "Manager",                xpRequired: 400_000,        prestigeBonus: 2.7,   icon: "📊" },
+    { id: 7, title: "Senior Manager",         xpRequired: 1_000_000,      prestigeBonus: 3.25,  icon: "💼" },
+    { id: 8, title: "Director",               xpRequired: 2_500_000,      prestigeBonus: 3.9,   icon: "🏢" },
+    { id: 9, title: "Senior Director",        xpRequired: 6_000_000,      prestigeBonus: 4.65,  icon: "🏙️" },
+    { id: 10,title: "Junior VP",              xpRequired: 15_000_000,     prestigeBonus: 5.5,   icon: "📈" },
+    { id: 11,title: "VP of Technology",       xpRequired: 35_000_000,     prestigeBonus: 6.5,   icon: "🚀" },
+    { id: 12,title: "Senior VP",              xpRequired: 80_000_000,     prestigeBonus: 7.75,  icon: "💎" },
+    { id: 13,title: "CIO",                    xpRequired: Infinity,       prestigeBonus: 10.0,  icon: "👑" },
   ];
 
   // ── Upgrades ──

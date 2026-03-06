@@ -26,6 +26,7 @@ function buildDefaultState() {
     careerTier: 0,
     prestiges: 0,
     prestigeMultiplier: 1.0,
+    strikes: 0,
     // Stats
     basePerClick: 1,
     basePerSec: 0,
@@ -479,6 +480,7 @@ function doPromotion() {
   S.careerTier++;
   S.prestiges++;
   S.prestigeMultiplier = nextTier.prestigeBonus * (1 + S.achMods.prestigeMult + S.skillMods.prestigeMult - 1);
+  S.strikes = 0;
   // Soft reset
   S.tickets = 0;
   S.lifetimeTickets = 0;
@@ -497,6 +499,37 @@ function doPromotion() {
     toast('🏆 YOU ARE THE CIO! The ultimate achievement unlocked!', 'gold');
   }
   document.getElementById('promotion-panel').classList.add('hidden');
+  renderAll();
+}
+
+function addStrike() {
+  S.strikes = (S.strikes || 0) + 1;
+  renderStats();
+  if (S.strikes >= 3) {
+    firePlayer();
+  } else {
+    toast(`⚠️ STRIKE ${S.strikes} / 3! Handle incidents or get fired!`, 'red');
+    SFX.error();
+  }
+}
+
+function firePlayer() {
+  S.strikes = 0;
+  S.tickets = 0;
+  S.lifetimeTickets = 0;
+  S.xp = 0;
+  S.level = 1;
+  S.careerTier = 0;
+  S.skillPoints = Math.floor(S.prestiges * 2);
+  S.xpRequired = xpForLevel(1);
+  S.upgradeOwned = {};
+  S.heroState = {};
+  S.basePerClick = 1;
+  S.basePerSec = 0;
+  reapplyAllSkills();
+  reapplyAllAchievements();
+  SFX.error();
+  document.getElementById('fired-modal').classList.remove('hidden');
   renderAll();
 }
 
@@ -526,11 +559,16 @@ function triggerIncident() {
   }, 1000);
 }
 
-function dismissIncident(resolved) {
+function dismissIncident(resolved, silently = false) {
   clearInterval(incidentCountdown);
   document.getElementById('incident-banner').classList.add('hidden');
   closeDispatchModal();
-  if (!resolved) toast('⚠️ Incident response window expired!', 'red');
+  if (!resolved && !silently) {
+    toast('⚠️ Incident abandoned! That is a strike!', 'red');
+    addStrike();
+  } else if (!resolved) {
+    // Silent dismiss
+  }
   activeIncident = null;
 }
 
@@ -608,7 +646,7 @@ function dispatchHeroToIncident(heroId) {
   const rewardBase = Math.max(calcPerSec() * inc.rewardMult * 10, 500);
   const reward     = Math.floor(rewardBase * match.mult);
 
-  dismissIncident(false); // clears banner/modal/timer without the "expired" toast
+  dismissIncident(false, true); // clears banner/modal/timer safely
   S.dispatches++;
   toast(`📡 ${hero.emoji} ${hero.name} dispatched! Resolving...`, 'gold');
 
@@ -724,8 +762,9 @@ function endMinigame(success) {
     emojiEl.textContent = '💀'; titleEl.textContent = 'INCIDENT FAILED!';
     titleEl.className = 'minigame-result-title failed';
     document.getElementById('minigame-result-reward').textContent =
-      `Only ${Math.round(mgState.progress*100)}% resolved. No reward.`;
+      `Only ${Math.round(mgState.progress*100)}% resolved. You gained a STRIKE.`;
     SFX.minigameFail();
+    addStrike();
   }
 
   if (reward > 0) { gainTickets(reward); gainXp(calcXpGain(reward)); }
@@ -776,6 +815,18 @@ function renderStats() {
   document.getElementById('per-min-display').textContent  = fmtDecimal(ps * 60);
   document.getElementById('prestige-display').textContent = S.prestiges;
   document.getElementById('prestige-bonus-display').textContent = `×${S.prestigeMultiplier.toFixed(2)}`;
+  
+  // Strikes display
+  const strikesRow = document.getElementById('strikes-row');
+  if (strikesRow) {
+    if (S.strikes > 0) {
+      strikesRow.style.display = 'flex';
+      document.getElementById('strikes-display').textContent = `${S.strikes} / 3`;
+    } else {
+      strikesRow.style.display = 'none';
+    }
+  }
+  
   document.getElementById('click-power-label').textContent = `+${fmtDecimal(pc)} ticket${pc !== 1 ? 's' : ''}`;
 
   // Career progress bar
@@ -1259,6 +1310,11 @@ function initTabs() {
   document.getElementById('btn-export').addEventListener('click', exportSave);
   document.getElementById('btn-import').addEventListener('click', importSave);
   document.getElementById('import-file-input').addEventListener('change', handleImportFile);
+  
+  // Fired Modal
+  document.getElementById('btn-accept-fired').addEventListener('click', () => {
+    document.getElementById('fired-modal').classList.add('hidden');
+  });
 
   // Auto-save on window close or refresh
   window.addEventListener('beforeunload', saveGame);
