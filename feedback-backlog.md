@@ -1,22 +1,18 @@
-# ServiceDeskHero Feedback Backlog
+﻿# ServiceDeskHero Feedback Backlog
 
-This file is the human-readable mirror of player feedback triaged from the cloud feedback database.
+Auto-generated from DynamoDB on 2026-03-05 22:58:12 -06:00.
 
-## Intake Schema
-- **type**: bug | idea | balance | ux
-- **message**: player-submitted note
-- **email**: optional
-- **version**: site version
-- **page**: page/path where feedback was submitted
-- **userAgent**: optional browser fingerprint clue
-- **status**: new | triaged | in-progress | shipped | declined
+## Summary
+- Total items: 1
+- By type: idea=1
+- By status: new=1
 
-## Triage Rules
-1. Group duplicates
-2. Promote reproducible bugs first
-3. Favor fixes that improve onboarding, pacing, or incident clarity
-4. Preserve funny/player-language quotes when useful
-5. Nightly GPT-5.4 work sessions should pull from this file or regenerate it from the DB mirror
+## Latest Feedback
 
-## Current Items
-- None yet
+### [IDEA] 2026-03-06T04:53:19.473Z
+- Status: new
+- Version: dev
+- Page: /
+- ID: 6d607dea-169c-42f1-8544-701a6cfad269
+- Message: Test feedback from Skippy
+
