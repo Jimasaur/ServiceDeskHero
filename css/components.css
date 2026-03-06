@@ -103,6 +103,40 @@
 /* ── Clicker Panel ── */
 .clicker-panel { padding: 12px 14px; }
 
+.shift-controls {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin: 10px 0 8px;
+}
+.btn-clock-toggle {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(59,130,246,0.95), rgba(124,92,252,0.95));
+  box-shadow: 0 8px 18px rgba(59,130,246,0.18);
+}
+.btn-clock-toggle.clocked-out {
+  background: linear-gradient(135deg, rgba(248,113,113,0.95), rgba(249,115,22,0.95));
+  box-shadow: 0 8px 18px rgba(248,113,113,0.18);
+}
+.shift-status {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.shift-status.rested {
+  color: var(--green);
+}
+.main-clicker-btn.is-disabled {
+  opacity: 0.55;
+  filter: grayscale(0.15);
+  box-shadow: none;
+}
+
 .combo-area {
   height: 28px;
   display: flex;

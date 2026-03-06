@@ -53,6 +53,10 @@ function buildDefaultState() {
     tutorialFirstUpgradeDone: false,
     tutorialFirstIncidentSeen: false,
     tutorialFirstIncidentResolved: false,
+    // Shift state
+    clockedOut: false,
+    clockedOutAt: null,
+    restedBuffUntil: 0,
     // Heroes currently available for hire
     applicantPool: [],
     // Metadata for active recruit candidates (bad hire flags/hints)
@@ -327,12 +331,14 @@ function floatNumber(text, x, y) {
 // DERIVED STATS
 // ══════════════════════════════════════════════════════════════
 function calcPerClick() {
+  if (S.clockedOut) return 0;
   const sm = S.skillMods;
   const am = S.achMods;
   const diff = getDifficulty();
+  const restedBonus = Date.now() < (S.restedBuffUntil || 0) ? 1.15 : 1;
   const base = S.basePerClick + sm.perClick + am.perClick;
   const clickMult = 1 + sm.critChance + am.clickMult;
-  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier;
+  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier * restedBonus;
   return Math.max(1, applySoftCap(base * clickMult * global, 120, 0.88));
 }
 
@@ -340,6 +346,8 @@ function calcPerSec() {
   const sm = S.skillMods;
   const am = S.achMods;
   const diff = getDifficulty();
+  const restedBonus = Date.now() < (S.restedBuffUntil || 0) ? 1.15 : 1;
+  const offShiftPenalty = S.clockedOut ? 0.6 : 1;
   // Base from upgrades
   let upgradePs = UPGRADES.reduce((acc, u) => {
     const owned = S.upgradeOwned[u.id] || 0;
@@ -362,8 +370,8 @@ function calcPerSec() {
   const flat = sm.perSec + am.perSec;
   const psMult = 1 + sm.perSecMult;
   const squadBonus = 1 + dampenBonus(sm.squadMult + am.squadMult);
-  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier;
-  return applySoftCap((upgradePs + squadPs + flat) * psMult * squadBonus * global, 220, 0.8);
+  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier * restedBonus;
+  return applySoftCap((upgradePs + squadPs + flat) * psMult * squadBonus * global * offShiftPenalty, 220, 0.8);
 }
 
 function calcXpGain(tickets) {
@@ -378,6 +386,10 @@ function calcXpGain(tickets) {
 // CORE CLICK
 // ══════════════════════════════════════════════════════════════
 function handleClick(evt) {
+  if (S.clockedOut) {
+    toast('🕒 You are clocked out. Go home, you magnificent work goblin.', 'red');
+    return;
+  }
   const sm = S.skillMods;
   let amount = calcPerClick();
   S.totalClicks = (S.totalClicks || 0) + 1;
@@ -1068,6 +1080,7 @@ function getIncidentCommentary(inc) {
 
 function triggerIncident() {
   if (activeIncident) return;
+  if (S.clockedOut && Math.random() < 0.75) return; // Most incidents defer while off shift
   const inc = INCIDENTS[Math.floor(Math.random() * INCIDENTS.length)];
   activeIncident = { ...inc, timeLeft: inc.timeLimit };
   const banner = document.getElementById('incident-banner');
@@ -1386,6 +1399,18 @@ function renderStats() {
   document.getElementById('tickets-display').textContent  = fmt(S.tickets);
   const diffDisplay = document.getElementById('difficulty-display');
   if (diffDisplay) diffDisplay.textContent = getDifficulty().name;
+  const shiftBtn = document.getElementById('btn-clock-toggle');
+  const shiftStatus = document.getElementById('shift-status');
+  const clickBtn = document.getElementById('main-clicker');
+  const rested = Date.now() < (S.restedBuffUntil || 0);
+  if (shiftBtn && shiftStatus && clickBtn) {
+    shiftBtn.textContent = S.clockedOut ? '🟢 Clock In' : '🕒 Clock Out';
+    shiftBtn.classList.toggle('clocked-out', S.clockedOut);
+    shiftStatus.textContent = S.clockedOut ? 'Off Shift • squad running at 60%' : (rested ? 'On Shift • rested bonus active' : 'On Shift');
+    shiftStatus.classList.toggle('rested', rested && !S.clockedOut);
+    clickBtn.disabled = S.clockedOut;
+    clickBtn.classList.toggle('is-disabled', S.clockedOut);
+  }
   document.getElementById('lifetime-display').textContent = fmt(S.lifetimeTickets);
   document.getElementById('per-click-display').textContent= fmtDecimal(pc);
   document.getElementById('per-sec-display').textContent  = fmtDecimal(ps);
@@ -1808,6 +1833,31 @@ async function submitFeedback(evt) {
 // ══════════════════════════════════════════════════════════════
 // SOUND TOGGLE
 // ══════════════════════════════════════════════════════════════
+function toggleClockedOut() {
+  if (S.clockedOut) {
+    S.clockedOut = false;
+    const offMs = Date.now() - (S.clockedOutAt || Date.now());
+    S.clockedOutAt = null;
+    if (offMs >= 60_000) {
+      S.restedBuffUntil = Date.now() + 120_000;
+      toast('☀️ Clocked back in. Rested bonus active for 2 minutes.', 'green');
+    } else {
+      toast('☀️ Back on shift. That break barely counts, but fine.', 'green');
+    }
+  } else {
+    S.clockedOut = true;
+    S.clockedOutAt = Date.now();
+    S.restedBuffUntil = 0;
+    if (activeIncident) {
+      dismissIncident(false, true);
+      toast('🕒 Clocked out. Current incident deferred to the next poor soul.', 'gold');
+    } else {
+      toast('🕒 Clocked out. Click income halted; squad keeps the lights on at 60%.', 'gold');
+    }
+  }
+  renderStats();
+}
+
 function toggleSound() {
   const on = SFX.toggle();
   document.getElementById('btn-sound').textContent = on ? '🔊' : '🔇';
@@ -1954,6 +2004,7 @@ function initTabs() {
   document.getElementById('btn-sound').addEventListener('click', toggleSound);
   document.getElementById('btn-help').addEventListener('click', openHelp);
   document.getElementById('btn-feedback').addEventListener('click', openFeedback);
+  document.getElementById('btn-clock-toggle').addEventListener('click', toggleClockedOut);
   document.getElementById('btn-close-help').addEventListener('click', closeHelp);
   document.getElementById('help-overlay').addEventListener('click', closeHelp);
   document.getElementById('btn-close-feedback').addEventListener('click', closeFeedback);
