@@ -315,14 +315,41 @@ function setActiveTab(tabName) {
   if (tabName === 'stats') renderStatsTab();
 }
 
+function getCheapestRecruitTarget() {
+  const candidates = S.applicantPool
+    .map(id => HEROES.find(x => x.id === id))
+    .filter(Boolean)
+    .map(hero => ({ hero, cost: getHeroRecruitCost(hero) }));
+  if (!candidates.length) return null;
+  return candidates.sort((a, b) => a.cost - b.cost)[0];
+}
+
+function getCheapestUpgradeTarget() {
+  const candidates = UPGRADES.map(upgrade => ({ upgrade, cost: upgradeCost(upgrade) }));
+  if (!candidates.length) return null;
+  return candidates.sort((a, b) => a.cost - b.cost)[0];
+}
+
 function renderOnboarding() {
   const panel = document.getElementById('onboarding-panel');
   if (!panel) return;
 
+  const recruitTarget = getCheapestRecruitTarget();
+  const upgradeTarget = getCheapestUpgradeTarget();
   const steps = [
     { done: S.tutorialFirstClickDone, text: 'Resolve your first ticket and start the queue moving.' },
-    { done: S.tutorialFirstRecruitDone, text: 'Recruit your first hero so tickets keep moving without your fingers.' },
-    { done: S.tutorialFirstUpgradeDone, text: 'Buy your first upgrade and begin automating your way into management.' },
+    {
+      done: S.tutorialFirstRecruitDone,
+      text: recruitTarget
+        ? `Recruit your first hero (${recruitTarget.hero.name} is ${fmt(recruitTarget.cost)} tickets right now).`
+        : 'Recruit your first hero so tickets keep moving without your fingers.',
+    },
+    {
+      done: S.tutorialFirstUpgradeDone,
+      text: upgradeTarget
+        ? `Buy your first upgrade (${upgradeTarget.upgrade.name} starts at ${fmt(upgradeTarget.cost)} tickets).`
+        : 'Buy your first upgrade and begin automating your way into management.',
+    },
     { done: S.tutorialFirstIncidentResolved, text: 'Survive your first incident without collecting a strike.' },
   ];
 
@@ -349,11 +376,25 @@ function renderOnboarding() {
     actionLabel = 'Resolve Some Tickets';
     action = 'click';
   } else if (!S.tutorialFirstRecruitDone) {
-    tip = 'Your first recruit is the first taste of passive income. Open Squad and hire one.';
+    if (recruitTarget) {
+      const needed = Math.max(0, recruitTarget.cost - S.tickets);
+      tip = needed > 0
+        ? `${recruitTarget.hero.name} is your cheapest hire at ${fmt(recruitTarget.cost)} tickets. Need ${fmt(needed)} more before delegation begins.`
+        : `${recruitTarget.hero.name} is affordable now. Open Squad and stop doing all the work yourself.`;
+    } else {
+      tip = 'Your first recruit is the first taste of passive income. Open Squad and hire one.';
+    }
     actionLabel = 'Open Squad';
     action = 'squad';
   } else if (!S.tutorialFirstUpgradeDone) {
-    tip = 'Now buy one upgrade. Tools beat heroics, mostly.';
+    if (upgradeTarget) {
+      const needed = Math.max(0, upgradeTarget.cost - S.tickets);
+      tip = needed > 0
+        ? `${upgradeTarget.upgrade.name} is the cheapest upgrade at ${fmt(upgradeTarget.cost)} tickets. Need ${fmt(needed)} more to start automating.`
+        : `${upgradeTarget.upgrade.name} is affordable now. Open Upgrades and buy your first bit of process theater.`;
+    } else {
+      tip = 'Now buy one upgrade. Tools beat heroics, mostly.';
+    }
     actionLabel = 'Open Upgrades';
     action = 'upgrades';
   } else {
@@ -1693,7 +1734,7 @@ function buildHeroCard(h, hs, owned) {
   // Skill badges on owned hero cards
   if (owned) {
     const lvl = hs.level;
-    const lvlUpCost = Math.floor(h.levelUpBaseCost * Math.pow(1.35, lvl - 1));
+    const lvlUpCost = getHeroLevelCost(h, lvl);
     const trainCost = 2500 * ((h.skills || []).length + 1);
     const cpsContrib = fmtDecimal(h.baseCps * (1 + (lvl - 1) * 0.25));
     const skillBadges = (h.skills || []).map(s => `<span class="skill-badge">${s}</span>`).join('');
@@ -1733,6 +1774,7 @@ function buildHeroCard(h, hs, owned) {
     card.querySelector('.btn-train').addEventListener('click', () => startTraining(h.id));
   } else {
     const skillBadges = (h.skills || []).map(s => `<span class="skill-badge">${s}</span>`).join('');
+    const recruitCost = getHeroRecruitCost(h);
     card.innerHTML = `
       <div class="hero-card-top">
         <span class="hero-emoji">${h.emoji}</span>
@@ -1746,10 +1788,10 @@ function buildHeroCard(h, hs, owned) {
       <p style="font-size:0.79rem;color:var(--text-dim);margin:0 0 8px;">${h.desc}</p>
       <div class="hero-card-stats">
         <div class="hero-stat">Base CPS<span>${h.baseCps}</span></div>
-        <div class="hero-stat">Cost<span>${fmt(h.recruitCost)}🎫</span></div>
+        <div class="hero-stat">Cost<span>${fmt(recruitCost)}🎫</span></div>
       </div>
       <div class="hero-card-actions">
-        <button class="btn-hero btn-recruit" ${S.tickets >= h.recruitCost ? '' : 'disabled'}>Recruit</button>
+        <button class="btn-hero btn-recruit" ${S.tickets >= recruitCost ? '' : 'disabled'}>Recruit</button>
       </div>
     `;
     card.querySelector('.btn-recruit').addEventListener('click', () => recruitHero(h.id));
