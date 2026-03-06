@@ -25,7 +25,8 @@ $rows = @(
       id        = $item.id.S
     }
   }
-) | Sort-Object createdAt -Descending
+)
+$rows = @($rows | Sort-Object createdAt -Descending)
 
 $typeGroups = $rows | Group-Object type | Sort-Object Name
 $statusGroups = $rows | Group-Object status | Sort-Object Name

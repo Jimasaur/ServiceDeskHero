@@ -397,10 +397,14 @@ function renderOnboarding() {
     }
     actionLabel = 'Open Upgrades';
     action = 'upgrades';
+  } else if (activeIncident) {
+    tip = `Incident live: ${activeIncident.title}. Hit respond now before HR turns this into a personality test.`;
+    actionLabel = 'Respond Now';
+    action = 'incident';
   } else {
-    tip = 'Next incident that pops up? Handle it fast. HR is always watching.';
-    actionLabel = 'Stay Ready';
-    action = 'none';
+    tip = 'Your last quick-start step is your first real incident. Review the incident rules now so you do not panic decoratively later.';
+    actionLabel = 'Review Incident Rules';
+    action = 'help';
   }
 
   document.getElementById('onboarding-tip').textContent = tip;
@@ -2231,7 +2235,9 @@ function initTabs() {
     const action = document.getElementById('btn-onboarding-action').dataset.action;
     if (action === 'squad') setActiveTab('squad');
     else if (action === 'upgrades') setActiveTab('upgrades');
-    else if (action === 'click') document.getElementById('main-clicker').focus();
+    else if (action === 'click') document.getElementById('main-clicker').click();
+    else if (action === 'incident') openDispatchModal();
+    else if (action === 'help') openHelp();
   });
   // Incident: RESPOND NOW opens dispatch modal
   document.getElementById('incident-resolve').addEventListener('click', openDispatchModal);
