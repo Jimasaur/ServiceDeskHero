@@ -4,7 +4,7 @@
    ============================================================ */
 
 // ── Wait for constants.js to populate window.GAME_DATA ──
-const { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS } = window.GAME_DATA;
+const { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES } = window.GAME_DATA;
 const SFX = window.SFX;
 
 // ══════════════════════════════════════════════════════════════
@@ -26,6 +26,8 @@ function buildDefaultState() {
     careerTier: 0,
     prestiges: 0,
     prestigeMultiplier: 1.0,
+    // Difficulty & balancing controls
+    difficultyId: 'medium',
     strikes: 0,
     // Stats
     basePerClick: 1,
@@ -45,6 +47,8 @@ function buildDefaultState() {
     dayProgress: 0,
     // Heroes currently available for hire
     applicantPool: [],
+    // Metadata for active recruit candidates (bad hire flags/hints)
+    recruitCandidateMeta: {},
     // Achievements earned
     achievedIds: [],
     // Stats for achievement checks
@@ -79,6 +83,7 @@ function buildDefaultState() {
     // Timestamps
     lastSave: Date.now(),
     lastTick: Date.now(),
+    lastBadHirePenaltyTick: Date.now(),
   };
 }
 
@@ -100,8 +105,115 @@ function fmtDecimal(n, d = 1) {
   return n.toFixed(d);
 }
 
+function getDifficulty() {
+  return DIFFICULTY_MODES.find((d) => d.id === S.difficultyId) || DIFFICULTY_MODES.find((d) => d.id === 'medium') || DIFFICULTY_MODES[0];
+}
+
+function dampenBonus(sum) {
+  if (!sum || sum <= 0) return 0;
+  return Math.sqrt(sum);
+}
+
+function applySoftCap(value, knee = 180, exponent = 0.8) {
+  if (!value || value <= 0) return 0;
+  if (value <= knee) return value;
+  return knee * Math.pow(value / knee, exponent);
+}
+
+function getCareerRequirement(tier) {
+  const d = getDifficulty();
+  return Math.floor((tier?.xpRequired || 0) * (d.careerScale || 1));
+}
+
+function getHeroRecruitCost(h) {
+  const d = getDifficulty();
+  return Math.max(1, Math.floor(h.recruitCost * (d.recruitCostMultiplier || 1)));
+}
+
+function getHeroLevelCost(h, currentLevel = 1) {
+  const d = getDifficulty();
+  return Math.max(1, Math.floor(h.levelUpBaseCost * Math.pow(1.42, Math.max(0, currentLevel - 1)) * (d.heroLevelCostMultiplier || 1)));
+}
+
+function getHeroFireCost(h, hs) {
+  const d = getDifficulty();
+  const base = 120 + h.recruitCost + h.levelUpBaseCost * Math.max(1, (hs?.level || 1) * 0.5);
+  return Math.max(1, Math.floor(base * (d.fireCostMultiplier || 0.7)));
+}
+
+function getHeroPenaltyHintLevel(meta, now = Date.now()) {
+  if (!meta || !meta.badHire) return 0;
+  const age = now - (meta.discoveredAt || now);
+  if (age >= 150_000) return 3;
+  if (age >= 90_000) return 2;
+  if (age >= 30_000) return 1;
+  return 0;
+}
+
 function xpForLevel(lvl) {
   return Math.floor(100 * Math.pow(lvl, 1.55));
+}
+
+// ══════════════════════════════════════════════════════════════
+// BAD HIRE MORALE DRAIN
+// ══════════════════════════════════════════════════════════════
+function applyBadHireMoraleDrain() {
+  const now = Date.now();
+  const elapsed = now - (S.lastBadHirePenaltyTick || now);
+  if (elapsed < 3000) return; // Only run every 3 seconds
+  S.lastBadHirePenaltyTick = now;
+
+  // Count active bad hires
+  let badCount = 0;
+  HEROES.forEach(h => {
+    const hs = S.heroState[h.id];
+    if (hs && hs.owned && hs.badHire && hs.status === 'Active') badCount++;
+  });
+  if (badCount === 0) {
+    // Slowly recover morale when no bad hires present
+    HEROES.forEach(h => {
+      const hs = S.heroState[h.id];
+      if (hs && hs.owned && !hs.badHire) {
+        hs.badHirePenalty = Math.min(1, (hs.badHirePenalty || 1) + 0.005);
+      }
+    });
+    return;
+  }
+
+  // Each bad hire reduces all other heroes' effective CPS by 1-2%
+  const drainPerBad = 0.015; // 1.5% per bad hire per 3 seconds
+  HEROES.forEach(h => {
+    const hs = S.heroState[h.id];
+    if (hs && hs.owned && !hs.badHire) {
+      hs.badHirePenalty = Math.max(0.3, (hs.badHirePenalty || 1) - (drainPerBad * badCount));
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// STRIKE RECOVERY EVENTS
+// ══════════════════════════════════════════════════════════════
+const STRIKE_RECOVERY_EVENTS = [
+  { name: 'CIO Knows My Dad', text: '👔 Nepotism wins again! Strike forgiven through connections.', icon: '🤝' },
+  { name: 'Fixed a Big Problem Publicly', text: '🦸 You heroically fixed a major outage! (Never mind that you caused it.) -1 strike!', icon: '🔧' },
+  { name: 'Blamed It On The Intern', text: '🎯 Strike reassigned to the intern. They probably deserved it anyway.', icon: '📋' },
+  { name: 'Server Room Fire Drill', text: '🔥 Mandatory evacuation! By the time everyone got back, your mistake was forgotten.', icon: '🚨' },
+  { name: 'Vendor Took The Fall', text: '🏢 The outsourcer absorbed the blame. That is what SLAs are for, right?', icon: '📝' },
+  { name: 'Beer Friday Saved You', text: '🍺 Team bonding erased the grudge. Nothing a cold one cannot fix.', icon: '🎉' },
+  { name: 'Convenient System Crash', text: '💥 A well-timed BSOD wiped the incident log. What strike?', icon: '💻' },
+  { name: 'CEO Distracted by AI Hype', text: '🤖 Leadership is too busy talking about AI to remember your screw-up.', icon: '✨' },
+];
+
+function rollStrikeRecovery() {
+  if (S.strikes <= 0) return;
+  const chance = 0.07; // 7% chance per incident cycle
+  if (Math.random() > chance) return;
+
+  const evt = STRIKE_RECOVERY_EVENTS[Math.floor(Math.random() * STRIKE_RECOVERY_EVENTS.length)];
+  S.strikes = Math.max(0, S.strikes - 1);
+  toast(`${evt.icon} ${evt.name}: ${evt.text} Strikes: ${S.strikes}/3`, 'gold');
+  SFX.levelUp();
+  renderStats();
 }
 
 function toast(msg, type = '') {
@@ -132,15 +244,17 @@ function floatNumber(text, x, y) {
 function calcPerClick() {
   const sm = S.skillMods;
   const am = S.achMods;
+  const diff = getDifficulty();
   const base = S.basePerClick + sm.perClick + am.perClick;
-  const clickMult = 1 + sm.critChance + am.clickMult; // rough clickMult
-  const global = (1 + sm.globalMult + am.globalMult) * S.prestigeMultiplier;
-  return Math.max(1, base * clickMult * global);
+  const clickMult = 1 + sm.critChance + am.clickMult;
+  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier;
+  return Math.max(1, applySoftCap(base * clickMult * global, 120, 0.88));
 }
 
 function calcPerSec() {
   const sm = S.skillMods;
   const am = S.achMods;
+  const diff = getDifficulty();
   // Base from upgrades
   let upgradePs = UPGRADES.reduce((acc, u) => {
     const owned = S.upgradeOwned[u.id] || 0;
@@ -153,14 +267,18 @@ function calcPerSec() {
     if (!hs || !hs.owned) return;
     if (hs.status && hs.status !== 'Active') return; // Out on crisis
     const lvlMult = 1 + (hs.level - 1) * 0.25;
-    squadPs += h.baseCps * lvlMult;
+    const moralePenalty = hs.badHire ? 1 : (typeof hs.badHirePenalty === 'number' ? hs.badHirePenalty : 1);
+    squadPs += h.baseCps * lvlMult * moralePenalty;
   });
+  squadPs = applySoftCap(squadPs, 180, 0.82);
+  upgradePs = applySoftCap(upgradePs, 180, 0.82);
   squadPs *= (1 + sm.squadMult + am.squadMult);
 
   const flat = sm.perSec + am.perSec;
   const psMult = 1 + sm.perSecMult;
-  const global = (1 + sm.globalMult + am.globalMult) * S.prestigeMultiplier;
-  return (upgradePs + squadPs + flat) * psMult * global;
+  const squadBonus = 1 + dampenBonus(sm.squadMult + am.squadMult);
+  const global = (1 + dampenBonus(sm.globalMult + am.globalMult)) * diff.incomeMultiplier * S.prestigeMultiplier;
+  return applySoftCap((upgradePs + squadPs + flat) * psMult * squadBonus * global, 220, 0.8);
 }
 
 function calcXpGain(tickets) {
@@ -168,7 +286,7 @@ function calcXpGain(tickets) {
   const mult = 1 + S.skillMods.xpMult;
   // Sam Voss xpBoost
   const samBoost = (S.heroState['sam'] && S.heroState['sam'].owned) ? 1.5 : 1;
-  return base * mult * samBoost;
+  return base * mult * samBoost * (getDifficulty().xpMultiplier || 1);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -246,12 +364,20 @@ function updateButtonStates() {
     if (!h) return;
     const hs = S.heroState[id];
     if (hs && hs.owned) {
-      const lvlUpCost = Math.floor(h.levelUpBaseCost * Math.pow(1.35, hs.level - 1));
+      const lvlUpCost = getHeroLevelCost(h, hs.level);
       const btn = card.querySelector('.btn-levelup');
       if (btn) btn.disabled = S.tickets < lvlUpCost;
+      const fireBtn = card.querySelector('.btn-fire');
+      if (fireBtn) {
+        const ownedMs = Date.now() - (hs.ownedAt || Date.now());
+        const canFire = ownedMs >= 120_000;
+        const fireCost = getHeroFireCost(h, hs);
+        fireBtn.textContent = canFire ? `Fire (${fmt(fireCost)} tickets)` : `Fire (${Math.ceil((120_000 - ownedMs) / 1000)}s)`;
+        fireBtn.disabled = !canFire || S.tickets < fireCost;
+      }
     } else {
       const btn = card.querySelector('.btn-recruit');
-      if (btn) btn.disabled = S.tickets < h.recruitCost;
+      if (btn) btn.disabled = S.tickets < getHeroRecruitCost(h);
     }
   });
 }
@@ -286,6 +412,7 @@ let tickInterval = null;
 
 function startTick() {
   tickInterval = setInterval(() => {
+    applyBadHireMoraleDrain();
     const ps = calcPerSec();
     if (ps > 0) {
       const earned = ps / 10; // 100ms ticks
@@ -415,7 +542,8 @@ function startTraining(heroId) {
 // ══════════════════════════════════════════════════════════════
 function upgradeCost(upgrade) {
   const owned = S.upgradeOwned[upgrade.id] || 0;
-  return Math.floor(upgrade.baseCost * Math.pow(upgrade.costScale, owned));
+  const difficulty = getDifficulty();
+  return Math.max(1, Math.floor(upgrade.baseCost * Math.pow(upgrade.costScale, owned) * (difficulty.upgradeCostMultiplier || 1)));
 }
 
 function buyUpgrade(id) {
@@ -446,17 +574,32 @@ function buyUpgrade(id) {
 function recruitHero(id) {
   const h = HEROES.find(x => x.id === id);
   if (!h) return;
-  if (S.tickets < h.recruitCost) {
+  const recruitCost = getHeroRecruitCost(h);
+  const meta = (S.recruitCandidateMeta && S.recruitCandidateMeta[id]) || {};
+  if (S.tickets < recruitCost) {
     SFX.error();
     toast('Not enough tickets to recruit!', 'red');
     return;
   }
-  S.tickets -= h.recruitCost;
-  S.heroState[id] = { owned: true, level: 1, xp: 0, status: 'Active', morale: 100, absenceDays: 0 };
+  S.tickets -= recruitCost;
+  const now = Date.now();
+  S.heroState[id] = {
+    owned: true,
+    level: 1,
+    xp: 0,
+    status: 'Active',
+    morale: 100,
+    absenceDays: 0,
+    badHire: !!meta.badHire,
+    badHireFailChance: meta.badHire ? (meta.badHireFailChance || (0.4 + Math.random() * 0.2)) : 0,
+    badHireClue: meta.badHireClue || '',
+    ownedAt: now,
+    badHirePenalty: 1,
+  };
   S.applicantPool = S.applicantPool.filter(appId => appId !== id);
   S.heroesOwned++;
   SFX.recruit();
-  toast(`🦸 ${h.name} joined your squad!`, 'gold');
+  toast(`🦸 ${h.name} joined your squad!`, meta.badHire ? 'red' : 'gold');
   renderSquad();
   renderStats();
   checkAchievements();
@@ -484,9 +627,36 @@ function refreshJobBoard(cost = 0) {
   // Pick up to 4 random heroes
   const poolSize = Math.min(4, unowned.length);
   S.applicantPool = [];
+  S.recruitCandidateMeta = S.recruitCandidateMeta || {};
   const shuffled = [...unowned].sort(() => 0.5 - Math.random());
+  const now = Date.now();
+  const selected = [];
   for (let i = 0; i < poolSize; i++) {
-    S.applicantPool.push(shuffled[i].id);
+    const id = shuffled[i].id;
+    selected.push(id);
+    S.applicantPool.push(id);
+    S.recruitCandidateMeta[id] = {
+      ...(S.recruitCandidateMeta[id] || {}),
+      badHire: false,
+      discoveredAt: now,
+      badHireClue: S.recruitCandidateMeta[id]?.badHireClue || '',
+    };
+  }
+
+  if (selected.length > 0 && Math.random() < (getDifficulty().badHireChance || 0.12)) {
+    const badIdx = Math.floor(Math.random() * selected.length);
+    const badId = selected[badIdx];
+    const clues = [
+      'Keeps saying synergy.',
+      'Reply-all specialist.',
+      'Has a blockchain solution for everything.',
+      'Brings charts to simple outages.',
+    ];
+    const badMeta = S.recruitCandidateMeta[badId];
+    badMeta.badHire = true;
+    badMeta.discoveredAt = now;
+    badMeta.badHireFailChance = 0.4 + Math.random() * 0.2;
+    badMeta.badHireClue = clues[Math.floor(Math.random() * clues.length)];
   }
   
   if (cost > 0) {
@@ -501,7 +671,7 @@ function levelUpHero(id) {
   const h = HEROES.find(x => x.id === id);
   const hs = S.heroState[id];
   if (!h || !hs) return;
-  const cost = Math.floor(h.levelUpBaseCost * Math.pow(1.35, hs.level - 1));
+  const cost = getHeroLevelCost(h, hs.level);
   if (S.tickets < cost) {
     toast('Not enough tickets to level up!', 'red');
     return;
@@ -509,6 +679,38 @@ function levelUpHero(id) {
   S.tickets -= cost;
   hs.level++;
   toast(`⬆️ ${h.name} is now Level ${hs.level}!`, 'green');
+  renderSquad();
+  renderStats();
+}
+
+function fireHero(id) {
+  const h = HEROES.find(x => x.id === id);
+  if (!h) return;
+  const hs = S.heroState[id];
+  if (!hs || !hs.owned) return;
+  if (!hs.badHire) {
+    toast(`🧊 ${h.name} is a reliable hire. No reason to fire them.`, 'green');
+    return;
+  }
+
+  const ownedMs = Date.now() - (hs.ownedAt || Date.now());
+  if (ownedMs < 120_000) {
+    toast(`🕒 ${h.name} is on the clock. Fire option unlocks after 2 minutes.`, 'red');
+    return;
+  }
+
+  const cost = getHeroFireCost(h, hs);
+  if (S.tickets < cost) {
+    toast(`Not enough tickets to fire ${h.name}!`, 'red');
+    SFX.error();
+    return;
+  }
+
+  S.tickets -= cost;
+  delete S.heroState[id];
+  S.heroesOwned--;
+  SFX.purchase();
+  toast(`🧯 ${h.name} removed from your roster.`, 'green');
   renderSquad();
   renderStats();
 }
@@ -619,8 +821,9 @@ function reapplyAllAchievements() {
 function checkPromotionReady() {
   const nextTier = CAREER[S.careerTier + 1];
   if (!nextTier) return; // Already CIO
+  const req = getCareerRequirement(nextTier);
   const panel = document.getElementById('promotion-panel');
-  if (S.lifetimeTickets >= nextTier.xpRequired) {
+  if (S.lifetimeTickets >= req) {
     panel.classList.remove('hidden');
     document.getElementById('promo-description').textContent =
       `You've proven yourself. Accept promotion to ${nextTier.icon} ${nextTier.title} and gain ×${nextTier.prestigeBonus} permanent bonus. (Tickets reset, squad and upgrades stay!)`;
@@ -725,6 +928,9 @@ function dismissIncident(resolved, silently = false) {
     // Silent dismiss
   }
   activeIncident = null;
+
+  // Roll for strike recovery after each incident cycle
+  rollStrikeRecovery();
 }
 
 // ── Dispatch Modal ──────────────────────────────────────────
@@ -1472,6 +1678,13 @@ function initTabs() {
 // ══════════════════════════════════════════════════════════════
 (function init() {
   loadGame();
+
+  // Pick up difficulty from bootstrap (stored in localStorage by difficulty-modal script)
+  const bootstrapDiff = localStorage.getItem('difficultyMode') || localStorage.getItem('sdhDifficulty') || (window.GAME_SETTINGS && window.GAME_SETTINGS.difficulty);
+  if (bootstrapDiff && DIFFICULTY_MODES.find(d => d.id === bootstrapDiff)) {
+    S.difficultyId = bootstrapDiff;
+  }
+
   // Ensure gameStarted is tracked
   if (!S.gameStarted) S.gameStarted = Date.now();
   if (!S.totalClicks) S.totalClicks = 0;

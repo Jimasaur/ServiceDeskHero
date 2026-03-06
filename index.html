@@ -42,6 +42,49 @@
     <link rel="stylesheet" href="css/layout.css" />
     <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/animations.css" />
+
+    <style>
+      .difficulty-modal-panel {
+        max-width: 720px;
+        width: min(720px, calc(100% - 2rem));
+        border-color: rgba(168, 85, 247, 0.5);
+        background: linear-gradient(155deg, rgba(37, 18, 80, 0.96), rgba(76, 29, 149, 0.95));
+        box-shadow: 0 26px 72px rgba(0, 0, 0, 0.7), 0 0 45px rgba(167, 139, 250, 0.3);
+      }
+      .difficulty-modal-panel p {
+        color: var(--text-dim);
+        margin-top: 0.5rem;
+      }
+      .difficulty-options {
+        margin-top: 1rem;
+        display: grid;
+        gap: 0.75rem;
+      }
+      .difficulty-option-btn {
+        border: 1px solid rgba(168, 85, 247, 0.35);
+        background: rgba(124, 92, 252, 0.16);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        text-align: left;
+        cursor: pointer;
+        transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      }
+      .difficulty-option-btn:hover,
+      .difficulty-option-btn:focus-visible {
+        border-color: rgba(196, 181, 253, 0.8);
+        background: rgba(196, 181, 253, 0.2);
+        transform: translateY(-1px);
+      }
+      .difficulty-option-btn .difficulty-name {
+        font-size: 1.05rem;
+        font-weight: 700;
+      }
+      .difficulty-option-btn .difficulty-meta {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+      }
+    </style>
   </head>
   <body>
     <!-- ========== HEADER ========== -->
@@ -127,6 +170,9 @@
             </div>
             <div class="stat-row">
               <span>Per Minute</span><strong id="per-min-display">0</strong>
+            </div>
+            <div class="stat-row">
+              <span>Difficulty</span><strong id="difficulty-display">Medium</strong>
             </div>
             <div class="stat-row prestige-row">
               <span>🏆 Promotions</span><strong id="prestige-display">0</strong>
@@ -252,6 +298,33 @@
 
     <!-- ========== FLOATING CLICK NUMBERS ========== -->
     <div id="float-layer" class="float-layer"></div>
+
+    <!-- ========== DIFFICULTY MODAL ========== -->
+    <div id="difficulty-modal" class="help-modal hidden">
+      <div class="help-overlay" id="difficulty-overlay"></div>
+      <div class="help-panel difficulty-modal-panel">
+        <h2>ðŸ”´ Choose Your Difficulty</h2>
+        <p>Set the pace of your promotion run before you begin. You can still win, just maybe slower.</p>
+        <div class="difficulty-options">
+          <button type="button" class="difficulty-option-btn" data-difficulty="easy">
+            <span class="difficulty-name">Easy</span>
+            <span class="difficulty-meta">~1 hour to CIO</span>
+          </button>
+          <button type="button" class="difficulty-option-btn" data-difficulty="medium">
+            <span class="difficulty-name">Medium</span>
+            <span class="difficulty-meta">~5 hours to CIO</span>
+          </button>
+          <button type="button" class="difficulty-option-btn" data-difficulty="hard">
+            <span class="difficulty-name">Hard</span>
+            <span class="difficulty-meta">~10 hours to CIO</span>
+          </button>
+          <button type="button" class="difficulty-option-btn" data-difficulty="insane">
+            <span class="difficulty-name">Maybe Try a Real Job?</span>
+            <span class="difficulty-meta">~100 hours to CIO</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- ========== HOW TO PLAY MODAL ========== -->
     <div id="help-modal" class="help-modal hidden">
@@ -383,7 +456,144 @@
   <script src="js/heroes.js"></script>
   <script src="js/audio.js"></script>
   <script type="module" src="js/constants.js"></script>
-  <script type="module" src="js/main.js"></script>
+  <script>
+    (function () {
+      const DIFFICULTY_LABELS = {
+        easy: { name: "Easy", desc: "~1 hour to CIO" },
+        medium: { name: "Medium", desc: "~5 hours to CIO" },
+        hard: { name: "Hard", desc: "~10 hours to CIO" },
+        insane: { name: "Maybe Try a Real Job?", desc: "~100 hours to CIO" },
+      };
+
+      const SAVE_HINTS = [
+        "serviceDeskHeroSave",
+        "serviceDeskHeroState",
+        "serviceDeskHero",
+        "servicedeskhero",
+        "sdhero",
+        "sdh-save",
+      ];
+      const DIFFICULTY_KEYS = [
+        "serviceDeskHeroDifficulty",
+        "sdhDifficulty",
+        "difficulty",
+        "difficultyMode",
+      ];
+      const MAIN_SCRIPT_ID = "service-desk-main-script";
+
+      function parseSavePayload(raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") {
+            return null;
+          }
+          return parsed;
+        } catch {
+          return null;
+        }
+      }
+
+      function hasExistingSave() {
+        const keys = Object.keys(localStorage);
+        const knownKey = keys.some((key) =>
+          SAVE_HINTS.some((hint) => key.toLowerCase().includes(hint.toLowerCase()))
+        );
+        if (knownKey) return true;
+
+        return keys.some((key) => {
+          const parsed = parseSavePayload(localStorage.getItem(key));
+          if (!parsed) {
+            return false;
+          }
+          return (
+            parsed.tickets !== undefined ||
+            parsed.lifetime !== undefined ||
+            parsed.lifetimeTickets !== undefined ||
+            parsed.stats !== undefined ||
+            parsed.achievements !== undefined ||
+            parsed.careerIndex !== undefined ||
+            parsed.heroLevel !== undefined ||
+            parsed.upgrades !== undefined ||
+            parsed.squad !== undefined
+          );
+        });
+      }
+
+      function getSavedDifficulty() {
+        const directSave = DIFFICULTY_KEYS.find((key) => DIFFICULTY_LABELS[localStorage.getItem(key)]);
+        if (directSave) return localStorage.getItem(directSave);
+
+        const difficultyKey = Object.keys(localStorage).find(
+          (key) => key.toLowerCase().includes("difficulty") && DIFFICULTY_LABELS[localStorage.getItem(key)]
+        );
+        if (difficultyKey) return localStorage.getItem(difficultyKey);
+
+        return "";
+      }
+
+      function syncDifficulty(id) {
+        const normalized = DIFFICULTY_LABELS[id] ? id : "medium";
+        window.__GAME_DIFFICULTY__ = normalized;
+        window.GAME_SETTINGS = window.GAME_SETTINGS || {};
+        window.GAME_SETTINGS.difficulty = normalized;
+
+        DIFFICULTY_KEYS.forEach((key) => localStorage.setItem(key, normalized));
+        localStorage.setItem("difficultyMode", normalized);
+
+        const difficultyDisplay = document.getElementById("difficulty-display");
+        if (difficultyDisplay) {
+          difficultyDisplay.textContent = DIFFICULTY_LABELS[normalized].name;
+        }
+      }
+
+      function loadMain() {
+        if (document.getElementById(MAIN_SCRIPT_ID)) return;
+        const script = document.createElement("script");
+        script.id = MAIN_SCRIPT_ID;
+        script.src = "js/main.js";
+        document.body.appendChild(script);
+      }
+
+      function startWithDifficulty(mode) {
+        syncDifficulty(mode);
+        const difficultyModal = document.getElementById("difficulty-modal");
+        if (difficultyModal) {
+          difficultyModal.classList.add("hidden");
+        }
+        loadMain();
+      }
+
+      function initDifficultyModal() {
+        const difficultyModal = document.getElementById("difficulty-modal");
+        if (!difficultyModal) {
+          loadMain();
+          return;
+        }
+
+        const selected = getSavedDifficulty() || "medium";
+        syncDifficulty(selected);
+
+        if (hasExistingSave()) {
+          difficultyModal.classList.add("hidden");
+          loadMain();
+          return;
+        }
+
+        difficultyModal.classList.remove("hidden");
+        difficultyModal.querySelectorAll("[data-difficulty]").forEach((button) => {
+          button.addEventListener("click", () => {
+            startWithDifficulty(button.getAttribute("data-difficulty"));
+          });
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initDifficultyModal, { once: true });
+      } else {
+        initDifficultyModal();
+      }
+    })();
+  </script>
   <!--BUILD_VERSION-->
-</body>
+  </body>
 </html>

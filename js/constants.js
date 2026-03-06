@@ -214,5 +214,36 @@ window.GAME_DATA = (() => {
     { id: "level25",      icon: "⭐", name: "Expert",              desc: "Reach level 25.",                   goal: 25,       stat: "level",      reward: "📈 +2 skill points",     bonus: { skillPoints: 2 } },
   ];
 
-  return { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS };
+  const DIFFICULTY_MODES = [
+    {
+      id: "easy", name: "Easy", desc: "~1 hour to CIO",
+      incomeMultiplier: 1.8, xpMultiplier: 1.5,
+      upgradeCostMultiplier: 0.7, recruitCostMultiplier: 0.7,
+      heroLevelCostMultiplier: 0.8, careerScale: 0.5,
+      fireCostMultiplier: 0.5, badHireChance: 0.08,
+    },
+    {
+      id: "medium", name: "Medium", desc: "~5 hours to CIO",
+      incomeMultiplier: 1.0, xpMultiplier: 1.0,
+      upgradeCostMultiplier: 1.0, recruitCostMultiplier: 1.0,
+      heroLevelCostMultiplier: 1.0, careerScale: 1.0,
+      fireCostMultiplier: 0.7, badHireChance: 0.12,
+    },
+    {
+      id: "hard", name: "Hard", desc: "~10 hours to CIO",
+      incomeMultiplier: 0.6, xpMultiplier: 0.7,
+      upgradeCostMultiplier: 1.5, recruitCostMultiplier: 1.4,
+      heroLevelCostMultiplier: 1.6, careerScale: 2.0,
+      fireCostMultiplier: 1.0, badHireChance: 0.15,
+    },
+    {
+      id: "insane", name: "Maybe Try a Real Job?", desc: "~100 hours to CIO",
+      incomeMultiplier: 0.2, xpMultiplier: 0.3,
+      upgradeCostMultiplier: 3.0, recruitCostMultiplier: 2.5,
+      heroLevelCostMultiplier: 3.0, careerScale: 10.0,
+      fireCostMultiplier: 2.0, badHireChance: 0.20,
+    },
+  ];
+
+  return { CAREER, UPGRADES, HEROES, SKILLS, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES };
 })();
