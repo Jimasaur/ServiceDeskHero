@@ -608,6 +608,10 @@
   background: linear-gradient(135deg, var(--purple), var(--blue));
   color: #fff;
 }
+.btn-fire {
+  background: linear-gradient(135deg, rgba(248,113,113,0.95), rgba(185,28,28,0.95));
+  color: #fff;
+}
 .btn-assign {
   background: rgba(255,255,255,0.1);
   color: var(--text);

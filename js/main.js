@@ -1953,19 +1953,22 @@ function buildHeroCard(h, hs, owned) {
   const rarityColors = { common:'#9ea5d1', uncommon:'#4ade80', rare:'#3b82f6', epic:'#a78bfa', legendary:'#ffc94b' };
   const rarityColor  = rarityColors[h.rarity] || '#fff';
 
-  // Skill badges on owned hero cards
   if (owned) {
     const lvl = hs.level;
     const lvlUpCost = getHeroLevelCost(h, lvl);
     const trainCost = 2500 * ((h.skills || []).length + 1);
     const cpsContrib = fmtDecimal(h.baseCps * (1 + (lvl - 1) * 0.25));
     const skillBadges = (h.skills || []).map(s => `<span class="skill-badge">${s}</span>`).join('');
-    
+
     if (hs.morale === undefined) hs.morale = 100;
     const moraleColor = hs.morale > 70 ? 'var(--green)' : hs.morale > 30 ? 'var(--gold)' : 'var(--red)';
     const statusClass = hs.status === 'Active' ? 'status-active' : 'status-out';
     const hintLevel = hs.badHire ? (hs.badHireHintLevel || 0) : 0;
-    const badHireHint = hs.badHire ? `<div class="bad-hire-hint hint-${hintLevel}">${hintLevel === 0 ? '😬 Slightly off vibes.' : hintLevel === 1 ? '🤨 Talks in buzzwords. Output not found.' : hintLevel === 2 ? '🚩 Team morale dropping around this one.' : '☠️ Confirmed bad hire. Act accordingly.'}</div>` : '';
+    const badHireHint = hs.badHire
+      ? `<div class="bad-hire-hint hint-${hintLevel}">${hintLevel === 0 ? '[Watchlist] Slightly off vibes.' : hintLevel === 1 ? '[Warning] Talks in buzzwords. Output not found.' : hintLevel === 2 ? '[Problem] Team morale dropping around this one.' : '[Confirmed] Bad hire. Act accordingly.'}</div>`
+      : '';
+    const fireButton = hs.badHire ? '<button class="btn-hero btn-fire">Review for Exit</button>' : '';
+    const actionCols = hs.badHire ? 'grid-template-columns: repeat(3, minmax(0, 1fr));' : 'grid-template-columns: 1fr 1fr;';
 
     card.innerHTML = `
       <div class="hero-card-top">
@@ -1987,16 +1990,27 @@ function buildHeroCard(h, hs, owned) {
         <div class="hero-morale-bar-bg"><div class="hero-morale-bar" style="width:${hs.morale}%; background:${moraleColor}"></div></div>
       </div>
       <div class="hero-lvl-bar-wrap"><div class="hero-lvl-bar" style="width:${Math.min((lvl/20)*100,100)}%"></div></div>
-      <div class="hero-card-actions" style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-        <button class="btn-hero btn-levelup" ${S.tickets >= lvlUpCost ? '' : 'disabled'}>Lvl Up (${fmt(lvlUpCost)}🎫)</button>
-        <button class="btn-hero btn-train" ${S.tickets >= trainCost && hs.status === 'Active' ? '' : 'disabled'}>Train (${fmt(trainCost)}🎫)</button>
+      <div class="hero-card-actions" style="display:grid; ${actionCols} gap:6px;">
+        <button class="btn-hero btn-levelup" ${S.tickets >= lvlUpCost ? '' : 'disabled'}>Lvl Up (${fmt(lvlUpCost)} tickets)</button>
+        <button class="btn-hero btn-train" ${S.tickets >= trainCost && hs.status === 'Active' ? '' : 'disabled'}>Train (${fmt(trainCost)} tickets)</button>
+        ${fireButton}
       </div>
     `;
     card.querySelector('.btn-levelup').addEventListener('click', () => levelUpHero(h.id));
     card.querySelector('.btn-train').addEventListener('click', () => startTraining(h.id));
+    if (hs.badHire) {
+      card.querySelector('.btn-fire')?.addEventListener('click', () => fireHero(h.id));
+    }
   } else {
     const skillBadges = (h.skills || []).map(s => `<span class="skill-badge">${s}</span>`).join('');
     const recruitCost = getHeroRecruitCost(h);
+    const candidateMeta = S.recruitCandidateMeta?.[h.id] || {};
+    const clueLevel = getHeroPenaltyHintLevel(candidateMeta);
+    const clueText = candidateMeta.badHireClue || 'Proceed only if you enjoy consequences.';
+    const candidateWarning = candidateMeta.badHire
+      ? `<div class="bad-hire-hint hint-${clueLevel}">${clueLevel === 0 ? '[Vibe check] Background check pending. Something feels off.' : clueLevel === 1 ? `[Recruiter note] ${clueText}` : clueLevel === 2 ? `[Interview panel] ${clueText}` : `[Known risk] Everyone can smell the mistake now. ${clueText}`}</div>`
+      : '';
+
     card.innerHTML = `
       <div class="hero-card-top">
         <span class="hero-emoji">${h.emoji}</span>
@@ -2007,13 +2021,14 @@ function buildHeroCard(h, hs, owned) {
         </div>
       </div>
       <div class="hero-skills-row">${skillBadges}</div>
+      ${candidateWarning}
       <p style="font-size:0.79rem;color:var(--text-dim);margin:0 0 8px;">${h.desc}</p>
       <div class="hero-card-stats">
         <div class="hero-stat">Base CPS<span>${h.baseCps}</span></div>
-        <div class="hero-stat">Cost<span>${fmt(recruitCost)}🎫</span></div>
+        <div class="hero-stat">Cost<span>${fmt(recruitCost)} tickets</span></div>
       </div>
       <div class="hero-card-actions">
-        <button class="btn-hero btn-recruit" ${S.tickets >= recruitCost ? '' : 'disabled'}>Recruit</button>
+        <button class="btn-hero btn-recruit" ${S.tickets >= recruitCost ? '' : 'disabled'}>${candidateMeta.badHire ? 'Recruit Anyway' : 'Recruit'}</button>
       </div>
     `;
     card.querySelector('.btn-recruit').addEventListener('click', () => recruitHero(h.id));
