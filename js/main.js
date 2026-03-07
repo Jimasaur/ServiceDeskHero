@@ -1281,6 +1281,46 @@ function getIncidentCommentary(inc) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function getIncidentBestResponder(incident) {
+  const ownedHeroes = HEROES.filter(h => S.heroState[h.id]?.owned);
+  if (!ownedHeroes.length) return null;
+
+  return ownedHeroes
+    .map(hero => getDispatchCardData(hero, incident))
+    .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function renderIncidentBannerDetails(incident, previewReward, sev) {
+  const severityEl = document.getElementById('incident-severity');
+  const timerEl = document.getElementById('incident-timer');
+  const skillsEl = document.getElementById('incident-skill-chips');
+  const bestEl = document.getElementById('incident-best-response');
+  const bestResponder = getIncidentBestResponder(incident);
+  const skillChips = (incident.requiredSkills || []).length
+    ? [
+        '<span class="incident-skill-chip label">Needed</span>',
+        ...(incident.requiredSkills || []).map(skill => `<span class="incident-skill-chip">${skill}</span>`)
+      ]
+    : ['<span class="incident-skill-chip">Any competent gremlin can take this one.</span>'];
+
+  severityEl.classList.remove('sev-1', 'sev-2', 'sev-3');
+  severityEl.classList.add(sev.label.toLowerCase());
+  timerEl.classList.toggle('urgent', (incident.timeLeft || 0) <= 10);
+  skillsEl.innerHTML = skillChips.join('');
+
+  if (!bestResponder) {
+    bestEl.textContent = `Best response: solo panic mode. No squad yet. Reward preview still sits around ~${fmt(previewReward)} tickets if you can brute-force it.`;
+    return;
+  }
+
+  if (!bestResponder.isActive) {
+    bestEl.textContent = `Best response: ${bestResponder.hero.emoji} ${bestResponder.hero.name}, but they are ${bestResponder.hs.status.toLowerCase()}. You may need to handle this yourself.`;
+    return;
+  }
+
+  bestEl.textContent = `Best available responder: ${bestResponder.hero.emoji} ${bestResponder.hero.name} • ${bestResponder.match.label.replace(/^[^ ]+\s*/, '')} • ~${fmt(bestResponder.projectedReward)} tickets.`;
+}
+
 function triggerIncident() {
   if (activeIncident) return;
   if (S.clockedOut && Math.random() < 0.75) return; // Most incidents defer while off shift
@@ -1296,6 +1336,7 @@ function triggerIncident() {
   document.getElementById('incident-text').textContent  = `${inc.text} ${commentary}`;
   document.getElementById('incident-meta').textContent = `${sev.risk} Reward preview: ~${fmt(previewReward)} tickets.`;
   document.getElementById('incident-timer').textContent = `${inc.timeLimit}s`;
+  renderIncidentBannerDetails(activeIncident, previewReward, sev);
   banner.classList.remove('hidden');
   SFX.incident();
   if (!S.tutorialFirstIncidentSeen) {
@@ -1307,6 +1348,7 @@ function triggerIncident() {
     if (!activeIncident) { clearInterval(incidentCountdown); return; }
     activeIncident.timeLeft--;
     document.getElementById('incident-timer').textContent = `${activeIncident.timeLeft}s`;
+    document.getElementById('incident-timer').classList.toggle('urgent', activeIncident.timeLeft <= 10);
     const cn = document.getElementById('dispatch-countdown-num');
     if (cn) cn.textContent = activeIncident.timeLeft;
     if (activeIncident.timeLeft <= 0) dismissIncident(false);
