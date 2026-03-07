@@ -173,6 +173,77 @@ function getIncidentRewardMultiplier() {
   return 1 + (S.officeMods?.incidentRewardMult || 0);
 }
 
+function getRemainingOfficePerks() {
+  return OFFICE_UPGRADES.filter(perk => !(S.officePerksChosen || []).includes(perk.id));
+}
+
+function getCareerIntelModel() {
+  const tier = CAREER[S.careerTier];
+  const nextTier = CAREER[S.careerTier + 1] || null;
+  const remainingOfficePerks = getRemainingOfficePerks();
+
+  if (!nextTier) {
+    return {
+      tier,
+      nextTier: null,
+      pct: 100,
+      remaining: 0,
+      remainingOfficePerks,
+      previewPerks: [],
+    };
+  }
+
+  const req = getCareerRequirement(nextTier);
+  const remaining = Math.max(0, req - S.lifetimeTickets);
+  const pct = req > 0 ? Math.min((S.lifetimeTickets / req) * 100, 100) : 0;
+  const previewPool = remainingOfficePerks
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, 3);
+
+  return {
+    tier,
+    nextTier,
+    req,
+    remaining,
+    pct,
+    remainingOfficePerks,
+    previewPerks: previewPool,
+  };
+}
+
+function getCareerIntelMarkup() {
+  const intel = getCareerIntelModel();
+  if (!intel.nextTier) {
+    return {
+      status: 'Top of pyramid',
+      summary: 'You made CIO. Congratulations, you now own the meetings and the blame.',
+      chips: ['<span class="career-intel-chip highlight">👑 Max rank reached</span>'],
+      resetNote: 'Promotion loop complete. Now optimize the machine, chase achievements, or torment incidents for sport.',
+    };
+  }
+
+  const promotionBonus = Math.max(0, ((intel.nextTier.prestigeBonus - 1) * 100));
+  const officeText = intel.remainingOfficePerks.length
+    ? `${intel.remainingOfficePerks.length} office upgrade${intel.remainingOfficePerks.length === 1 ? '' : 's'} still in the interlude pool.`
+    : 'All office upgrades already secured.';
+
+  return {
+    status: intel.remaining === 0 ? 'Promotion armed' : `${Math.round(intel.pct)}% to ${intel.nextTier.title}`,
+    summary: intel.remaining === 0
+      ? `${intel.nextTier.icon} ${intel.nextTier.title} is ready. Promote for a permanent ×${intel.nextTier.prestigeBonus.toFixed(2)} multiplier, then pick an office upgrade before the next disaster cycle.`
+      : `${fmt(intel.remaining)} tickets until ${intel.nextTier.icon} ${intel.nextTier.title}. Promotion adds roughly +${promotionBonus.toFixed(0)}% permanent power on this run's reset.${intel.remaining <= Math.max(1500, intel.req * 0.12) ? ' You are in striking distance, so stop buying decorative nonsense unless it pays back fast.' : ''}`,
+    chips: [
+      `<span class="career-intel-chip highlight">🏆 Next bonus ×${intel.nextTier.prestigeBonus.toFixed(2)}</span>`,
+      `<span class="career-intel-chip">👥 Squad persists</span>`,
+      `<span class="career-intel-chip">🧠 Skills persist</span>`,
+      `<span class="career-intel-chip">🪑 ${officeText}</span>`,
+      ...intel.previewPerks.map(perk => `<span class="career-intel-chip">${perk.icon} ${perk.name}</span>`),
+    ],
+    resetNote: 'Promotion resets current tickets, upgrades, level, and strikes. It keeps your squad, achievements, office perks, and the permanent prestige multiplier. In other words: shed the clutter, keep the empire.',
+  };
+}
+
 function logIncidentEvent(incident, outcome, extra = {}) {
   if (!incident) return;
   const entry = {
@@ -1098,16 +1169,20 @@ function checkPromotionReady() {
   }
   const req = getCareerRequirement(nextTier);
   const progress = req > 0 ? (S.lifetimeTickets / req) : 0;
+  const remainingOfficePerks = getRemainingOfficePerks();
+  const officeHint = remainingOfficePerks.length
+    ? ` Office interlude still has ${remainingOfficePerks.length} permanent upgrade${remainingOfficePerks.length === 1 ? '' : 's'} left.`
+    : ' Office interlude pool is exhausted, so this one is pure prestige.';
   if (S.lifetimeTickets >= req) {
     panel.classList.remove('hidden');
     titleEl.textContent = '🚀 Promotion Ready!';
-    descEl.textContent = `You survived long enough to be rewarded with more responsibility. Promote to ${nextTier.icon} ${nextTier.title} and gain ×${nextTier.prestigeBonus} permanent bonus. Tickets reset. Squad and upgrades stay.`;
+    descEl.textContent = `You survived long enough to be rewarded with more responsibility. Promote to ${nextTier.icon} ${nextTier.title} for a permanent ×${nextTier.prestigeBonus.toFixed(2)} bonus. Reset: current tickets, upgrades, level, strikes. Keep: squad, skills, achievements, office perks.${officeHint}`;
     btnEl.textContent = `Accept Promotion to ${nextTier.title}`;
     btnEl.disabled = false;
   } else if (progress >= 0.72) {
     panel.classList.remove('hidden');
     titleEl.textContent = '👀 Promotion Track';
-    descEl.textContent = `${fmt(req - S.lifetimeTickets)} tickets until ${nextTier.icon} ${nextTier.title}. Leadership can smell a promotion deck forming.`;
+    descEl.textContent = `${fmt(req - S.lifetimeTickets)} tickets until ${nextTier.icon} ${nextTier.title}. Permanent bonus waiting: ×${nextTier.prestigeBonus.toFixed(2)}.${officeHint}`;
     btnEl.textContent = 'Not Quite There Yet';
     btnEl.disabled = true;
   } else {
@@ -1720,6 +1795,24 @@ function calcOfflineIncome() {
 // ══════════════════════════════════════════════════════════════
 // RENDER
 // ══════════════════════════════════════════════════════════════
+function renderCareerIntel() {
+  const panel = document.getElementById('career-intel-panel');
+  if (!panel) return;
+  const intel = getCareerIntelModel();
+  const markup = getCareerIntelMarkup();
+  const statusEl = document.getElementById('career-intel-status');
+  const summaryEl = document.getElementById('career-intel-summary');
+  const perksEl = document.getElementById('career-intel-perks');
+  const noteEl = document.getElementById('career-intel-reset-note');
+  const progressEl = document.getElementById('career-intel-progress-bar');
+
+  if (statusEl) statusEl.textContent = markup.status;
+  if (summaryEl) summaryEl.textContent = markup.summary;
+  if (perksEl) perksEl.innerHTML = markup.chips.join('');
+  if (noteEl) noteEl.textContent = markup.resetNote;
+  if (progressEl) progressEl.style.width = `${intel.pct || 0}%`;
+}
+
 function renderStats() {
   const ps = calcPerSec();
   const pc = calcPerClick();
@@ -1778,6 +1871,7 @@ function renderStats() {
     document.getElementById('career-progress-bar').style.width = '100%';
   }
   document.getElementById('career-title').textContent = `${tier.icon} ${tier.title}`;
+  renderCareerIntel();
 }
 
 function renderXpBar() {
@@ -2005,6 +2099,8 @@ function renderStatsTab() {
   const playTime = getPlayTimeStr();
   const officePerks = (S.officePerksChosen || []).map(id => OFFICE_UPGRADES.find(x => x.id === id)).filter(Boolean);
   const incidentLog = Array.isArray(S.incidentLog) ? S.incidentLog : [];
+  const careerIntel = getCareerIntelMarkup();
+  const careerIntelModel = getCareerIntelModel();
   el.innerHTML = `
     <div class="stats-grid">
       <div class="stat-card"><span class="stat-card-icon">🖥️</span><div class="stat-card-label">Current Title</div><div class="stat-card-value">${tier.icon} ${tier.title}</div></div>
@@ -2024,6 +2120,15 @@ function renderStatsTab() {
       <div class="stat-card"><span class="stat-card-icon">🧠</span><div class="stat-card-label">Skills Unlocked</div><div class="stat-card-value">${S.unlockedSkills.length} / ${SKILLS.length}</div></div>
       <div class="stat-card"><span class="stat-card-icon">🏅</span><div class="stat-card-label">Achievements</div><div class="stat-card-value">${S.achievedIds.length} / ${ACHIEVEMENTS.length}</div></div>
       <div class="stat-card"><span class="stat-card-icon">⏱️</span><div class="stat-card-label">Play Time</div><div class="stat-card-value">${playTime}</div></div>
+    </div>
+    <div class="career-outlook-wrap">
+      <h3 class="career-outlook-title">📈 Career Outlook</h3>
+      <p class="career-intel-summary">${careerIntel.summary}</p>
+      <div class="career-intel-progress">
+        <div class="career-intel-progress-bar" style="width:${careerIntelModel.pct || 0}%"></div>
+      </div>
+      <div class="career-intel-perks">${careerIntel.chips.join('')}</div>
+      <div class="career-intel-reset-note">${careerIntel.resetNote}</div>
     </div>
     ${officePerks.length ? `
       <div class="office-owned-wrap">

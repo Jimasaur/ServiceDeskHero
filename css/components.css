@@ -327,6 +327,104 @@
   box-shadow: none;
 }
 
+.career-intel-panel {
+  border-color: rgba(96, 165, 250, 0.28);
+  background: linear-gradient(135deg, rgba(30,41,59,0.92), rgba(37,99,235,0.10));
+}
+
+.career-intel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.career-intel-title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #dbeafe;
+}
+
+.career-intel-status {
+  font-size: 0.72rem;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.career-intel-progress {
+  position: relative;
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(15,23,42,0.85);
+  border: 1px solid rgba(96,165,250,0.18);
+  margin-bottom: 10px;
+}
+
+.career-intel-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--blue), #60a5fa, var(--gold));
+  box-shadow: 0 0 18px rgba(96,165,250,0.35);
+  transition: width 0.25s ease;
+}
+
+.career-intel-summary {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.career-intel-perks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.career-intel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15,23,42,0.6);
+  border: 1px solid rgba(148,163,184,0.18);
+  font-size: 0.74rem;
+  color: var(--text);
+}
+
+.career-intel-chip.highlight {
+  border-color: rgba(255,201,75,0.28);
+  color: #fef3c7;
+}
+
+.career-intel-reset-note {
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  padding-top: 10px;
+  border-top: 1px solid rgba(148,163,184,0.14);
+}
+
+.career-outlook-wrap {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(96,165,250,0.22);
+  background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(15,23,42,0.35));
+}
+
+.career-outlook-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: #dbeafe;
+}
+
 /* ── Squad ── */
 .squad-roster {
   display: grid;
