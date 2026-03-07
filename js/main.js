@@ -68,6 +68,7 @@ function buildDefaultState() {
     // Stats for achievement checks
     incidentsResolved: 0,
     dispatches: 0,
+    incidentLog: [],
     upgradesPurchased: 0,
     heroesOwned: 0,
     // Skill-driven modifiers
@@ -170,6 +171,47 @@ function rollOfficeDraftChoices() {
 
 function getIncidentRewardMultiplier() {
   return 1 + (S.officeMods?.incidentRewardMult || 0);
+}
+
+function logIncidentEvent(incident, outcome, extra = {}) {
+  if (!incident) return;
+  const entry = {
+    id: `${incident.id || 'incident'}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    incidentId: incident.id || 'unknown',
+    title: incident.title || 'Incident',
+    icon: incident.icon || '🚨',
+    category: incident.category || 'clerical',
+    severity: getIncidentSeverity(incident).label,
+    outcome,
+    reward: extra.reward || 0,
+    responder: extra.responder || null,
+    responderType: extra.responderType || null,
+    matchLabel: extra.matchLabel || null,
+    note: extra.note || '',
+    gameDay: S.gameDay || 1,
+    at: Date.now(),
+  };
+
+  S.incidentLog = [entry, ...(Array.isArray(S.incidentLog) ? S.incidentLog : [])].slice(0, 8);
+}
+
+function getIncidentOutcomeTone(entry) {
+  switch (entry.outcome) {
+    case 'resolved_dispatch':
+      return { label: 'Dispatched', cls: 'success' };
+    case 'resolved_self':
+      return { label: 'Handled Myself', cls: 'success' };
+    case 'partial_self':
+      return { label: 'Partial Save', cls: 'warning' };
+    case 'failed_self':
+      return { label: 'Failed', cls: 'danger' };
+    case 'missed':
+      return { label: 'Missed', cls: 'danger' };
+    case 'deferred':
+      return { label: 'Deferred', cls: 'neutral' };
+    default:
+      return { label: 'Logged', cls: 'neutral' };
+  }
 }
 
 function dampenBonus(sum) {
@@ -1275,11 +1317,18 @@ function dismissIncident(resolved, silently = false) {
   clearInterval(incidentCountdown);
   document.getElementById('incident-banner').classList.add('hidden');
   closeDispatchModal();
-  if (!resolved && !silently) {
+  if (!resolved && !silently && activeIncident) {
+    logIncidentEvent(activeIncident, 'missed', {
+      note: 'Timer expired before the team responded.',
+    });
     toast('⚠️ Incident abandoned! That is a strike!', 'red');
     addStrike();
-  } else if (!resolved) {
-    // Silent dismiss
+    renderStatsTab();
+  } else if (!resolved && silently && activeIncident) {
+    logIncidentEvent(activeIncident, 'deferred', {
+      note: 'Deferred while clocking out or changing flow.',
+    });
+    renderStatsTab();
   }
   activeIncident = null;
 
@@ -1452,12 +1501,20 @@ function dispatchHeroToIncident(heroId) {
     gainTickets(reward);
     gainXp(calcXpGain(reward));
     S.incidentsResolved++;
+    logIncidentEvent(inc, 'resolved_dispatch', {
+      reward,
+      responder: hero.name,
+      responderType: 'hero',
+      matchLabel: match.label,
+      note: `${hero.name} handled the escalation with ${match.label.replace(/^[^ ]+\s*/, '').toLowerCase()}.`,
+    });
     if (!S.tutorialFirstIncidentResolved) {
       S.tutorialFirstIncidentResolved = true;
       toast('🛡️ Incident contained. Excellent. Pretend this level of competence is sustainable.', 'gold');
       renderOnboarding();
     }
     toast(`✅ ${hero.name}: ${match.label} — +${fmt(reward)} tickets!`, 'green');
+    renderStatsTab();
     checkAchievements();
   }, resolveTime);
 }
@@ -1550,17 +1607,23 @@ function endMinigame(success) {
   const titleEl = document.getElementById('minigame-result-title');
   const emojiEl = document.getElementById('minigame-result-emoji');
 
+  let outcome = 'failed_self';
+  let note = `Only ${Math.round(mgState.progress * 100)}% resolved before the situation cratered.`;
   if (success || mgState.progress >= 1) {
     emojiEl.textContent = '🎉'; titleEl.textContent = 'INCIDENT RESOLVED!';
     titleEl.className = 'minigame-result-title success';
     document.getElementById('minigame-result-reward').textContent = `+${fmt(reward)} tickets earned!`;
     SFX.minigameWin();
+    outcome = 'resolved_self';
+    note = `Chuck personally dragged this mess over the finish line for +${fmt(reward)} tickets.`;
   } else if (mgState.progress >= 0.5) {
     emojiEl.textContent = '😅'; titleEl.textContent = 'Partially Resolved';
     titleEl.className = 'minigame-result-title success';
     document.getElementById('minigame-result-reward').textContent =
       `Salvaged +${fmt(reward)} tickets (${Math.round(mgState.progress*100)}% complete)`;
     SFX.minigameWin();
+    outcome = 'partial_self';
+    note = `Chuck stabilized ${Math.round(mgState.progress * 100)}% of the blast radius and salvaged +${fmt(reward)} tickets.`;
   } else {
     emojiEl.textContent = '💀'; titleEl.textContent = 'INCIDENT FAILED!';
     titleEl.className = 'minigame-result-title failed';
@@ -1572,8 +1635,15 @@ function endMinigame(success) {
 
   if (reward > 0) { gainTickets(reward); gainXp(calcXpGain(reward)); }
   S.incidentsResolved++;
+  logIncidentEvent(mgState.inc, outcome, {
+    reward,
+    responder: 'Chuck Sterling',
+    responderType: 'self',
+    note,
+  });
   activeIncident = null;
   mgState = null;
+  renderStatsTab();
   checkAchievements();
 }
 
@@ -1892,6 +1962,7 @@ function renderStatsTab() {
   const totalClicks = S.totalClicks || 0;
   const playTime = getPlayTimeStr();
   const officePerks = (S.officePerksChosen || []).map(id => OFFICE_UPGRADES.find(x => x.id === id)).filter(Boolean);
+  const incidentLog = Array.isArray(S.incidentLog) ? S.incidentLog : [];
   el.innerHTML = `
     <div class="stats-grid">
       <div class="stat-card"><span class="stat-card-icon">🖥️</span><div class="stat-card-label">Current Title</div><div class="stat-card-value">${tier.icon} ${tier.title}</div></div>
@@ -1928,6 +1999,42 @@ function renderStatsTab() {
         </div>
       </div>
     ` : ''}
+    <div class="incident-log-wrap">
+      <div class="incident-log-header">
+        <h3 class="office-owned-title">🚨 Recent Incident Desk</h3>
+        <span class="incident-log-subtitle">Last ${incidentLog.length || 0} escalations</span>
+      </div>
+      ${incidentLog.length ? `
+        <div class="incident-log-list">
+          ${incidentLog.map(entry => {
+            const tone = getIncidentOutcomeTone(entry);
+            const rewardText = entry.reward > 0 ? `+${fmt(entry.reward)} tickets` : 'No ticket gain';
+            const responderText = entry.responder ? `${entry.responder}${entry.matchLabel ? ` • ${entry.matchLabel}` : ''}` : 'Nobody stepped up';
+            return `
+              <div class="incident-log-item ${tone.cls}">
+                <div class="incident-log-topline">
+                  <div class="incident-log-title-wrap">
+                    <span class="incident-log-icon">${entry.icon}</span>
+                    <div>
+                      <div class="incident-log-title">${entry.title}</div>
+                      <div class="incident-log-meta">Day ${entry.gameDay} • ${entry.severity} • ${entry.category}</div>
+                    </div>
+                  </div>
+                  <span class="incident-log-pill ${tone.cls}">${tone.label}</span>
+                </div>
+                <div class="incident-log-body">
+                  <div><strong>Responder:</strong> ${responderText}</div>
+                  <div><strong>Impact:</strong> ${rewardText}</div>
+                  <div class="incident-log-note">${entry.note || 'Logged for posterity and future blame assignment.'}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      ` : `
+        <div class="incident-log-empty">No incidents logged yet. Enjoy the temporary illusion of control.</div>
+      `}
+    </div>
   `;
 }
 
@@ -2153,6 +2260,7 @@ function loadGame() {
     merged.officeMods = Object.assign({}, defaults.officeMods, saved.officeMods || {});
     merged.officePerksChosen = Array.isArray(saved.officePerksChosen) ? saved.officePerksChosen : [];
     merged.officeDraftChoices = Array.isArray(saved.officeDraftChoices) ? saved.officeDraftChoices : [];
+    merged.incidentLog = Array.isArray(saved.incidentLog) ? saved.incidentLog.slice(0, 8) : [];
     S = merged;
     // Restore non-serializable (timers)
     S.comboTimer = null;
