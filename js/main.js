@@ -59,6 +59,7 @@ function buildDefaultState() {
     clockedOut: false,
     clockedOutAt: null,
     restedBuffUntil: 0,
+    shiftGraceUntil: 0,
     // Heroes currently available for hire
     applicantPool: [],
     // Metadata for active recruit candidates (bad hire flags/hints)
@@ -1398,7 +1399,8 @@ function renderIncidentBannerDetails(incident, previewReward, sev) {
 
 function triggerIncident() {
   if (activeIncident) return;
-  if (S.clockedOut && Math.random() < 0.75) return; // Most incidents defer while off shift
+  if (S.clockedOut) return;
+  if (Date.now() < (S.shiftGraceUntil || 0)) return;
   const inc = INCIDENTS[Math.floor(Math.random() * INCIDENTS.length)];
   activeIncident = { ...inc, timeLeft: inc.timeLimit };
   const banner = document.getElementById('incident-banner');
@@ -1813,6 +1815,25 @@ function renderCareerIntel() {
   if (progressEl) progressEl.style.width = `${intel.pct || 0}%`;
 }
 
+function getShiftStatusText() {
+  const now = Date.now();
+  const restedMs = Math.max(0, (S.restedBuffUntil || 0) - now);
+  const graceMs = Math.max(0, (S.shiftGraceUntil || 0) - now);
+
+  if (S.clockedOut) {
+    return 'Off Shift • incidents paused • squad running at 60%';
+  }
+
+  const parts = ['On Shift'];
+  if (restedMs > 0) {
+    parts.push(`rested bonus ${Math.ceil(restedMs / 1000)}s`);
+  }
+  if (graceMs > 0) {
+    parts.push(`incident grace ${Math.ceil(graceMs / 1000)}s`);
+  }
+  return parts.join(' • ');
+}
+
 function renderStats() {
   const ps = calcPerSec();
   const pc = calcPerClick();
@@ -1826,7 +1847,7 @@ function renderStats() {
   if (shiftBtn && shiftStatus && clickBtn) {
     shiftBtn.textContent = S.clockedOut ? '🟢 Clock In' : '🕒 Clock Out';
     shiftBtn.classList.toggle('clocked-out', S.clockedOut);
-    shiftStatus.textContent = S.clockedOut ? 'Off Shift • squad running at 60%' : (rested ? 'On Shift • rested bonus active' : 'On Shift');
+    shiftStatus.textContent = getShiftStatusText();
     shiftStatus.classList.toggle('rested', rested && !S.clockedOut);
     clickBtn.disabled = S.clockedOut;
     clickBtn.classList.toggle('is-disabled', S.clockedOut);
@@ -1865,7 +1886,8 @@ function renderStats() {
   const tier = CAREER[S.careerTier];
   const nextTier = CAREER[S.careerTier + 1];
   if (nextTier) {
-    const pct = Math.min(S.lifetimeTickets / nextTier.xpRequired * 100, 100);
+    const req = getCareerRequirement(nextTier);
+    const pct = req > 0 ? Math.min(S.lifetimeTickets / req * 100, 100) : 0;
     document.getElementById('career-progress-bar').style.width = pct + '%';
   } else {
     document.getElementById('career-progress-bar').style.width = '100%';
@@ -2343,25 +2365,28 @@ async function submitFeedback(evt) {
 // SOUND TOGGLE
 // ══════════════════════════════════════════════════════════════
 function toggleClockedOut() {
+  const now = Date.now();
   if (S.clockedOut) {
     S.clockedOut = false;
-    const offMs = Date.now() - (S.clockedOutAt || Date.now());
+    const offMs = now - (S.clockedOutAt || now);
     S.clockedOutAt = null;
+    S.shiftGraceUntil = now + 20_000;
     if (offMs >= 60_000) {
-      S.restedBuffUntil = Date.now() + 120_000;
-      toast('☀️ Clocked back in. Rested bonus active for 2 minutes.', 'green');
+      S.restedBuffUntil = now + 120_000;
+      toast('☀️ Clocked back in. Rested bonus active for 2 minutes, plus 20 seconds of incident grace.', 'green');
     } else {
-      toast('☀️ Back on shift. That break barely counts, but fine.', 'green');
+      toast('☀️ Back on shift. Barely a break, but you still get 20 seconds before the next fire.', 'green');
     }
   } else {
     S.clockedOut = true;
-    S.clockedOutAt = Date.now();
+    S.clockedOutAt = now;
     S.restedBuffUntil = 0;
+    S.shiftGraceUntil = 0;
     if (activeIncident) {
       dismissIncident(false, true);
-      toast('🕒 Clocked out. Current incident deferred to the next poor soul.', 'gold');
+      toast('🕒 Clocked out. Current incident deferred. The queue can scream into the void without you for a bit.', 'gold');
     } else {
-      toast('🕒 Clocked out. Click income halted; squad keeps the lights on at 60%.', 'gold');
+      toast('🕒 Clocked out. Click income halted, incidents paused, squad keeps the lights on at 60%.', 'gold');
     }
   }
   renderStats();
