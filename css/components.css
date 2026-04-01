@@ -283,6 +283,33 @@
 }
 .onboarding-item.done .onboarding-mark { color: var(--green); }
 .onboarding-mark { color: var(--gold); font-weight: 800; }
+.onboarding-copy {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  width:100%;
+}
+.onboarding-copy span:first-child {
+  flex: 1;
+}
+.onboarding-reward {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--gold);
+  background: rgba(255,201,75,0.14);
+  border: 1px solid rgba(255,201,75,0.24);
+  border-radius: 999px;
+  padding: 3px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.onboarding-reward.claimed {
+  color: var(--green);
+  background: rgba(74,222,128,0.14);
+  border-color: rgba(74,222,128,0.24);
+}
 .btn-onboarding-action {
   width: 100%;
   padding: 9px;

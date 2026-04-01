@@ -55,6 +55,7 @@ function buildDefaultState() {
     tutorialFirstUpgradeDone: false,
     tutorialFirstIncidentSeen: false,
     tutorialFirstIncidentResolved: false,
+    tutorialRewardsClaimed: [],
     // Shift state
     clockedOut: false,
     clockedOutAt: null,
@@ -444,6 +445,65 @@ function getCheapestUpgradeTarget() {
   return candidates.sort((a, b) => a.cost - b.cost)[0];
 }
 
+const ONBOARDING_REWARDS = {
+  firstClick: {
+    label: '+25 tickets',
+    tickets: 25,
+    xp: 0,
+    toast: '⚡ First ticket bonus: +25 tickets. Bribery? No. Momentum.'
+  },
+  firstRecruit: {
+    label: '+60 tickets',
+    tickets: 60,
+    xp: 0,
+    toast: '👥 Delegation bonus: +60 tickets. Management loves headcount.'
+  },
+  firstUpgrade: {
+    label: '+75 tickets',
+    tickets: 75,
+    xp: 0,
+    toast: '🛠️ Process bonus: +75 tickets. Look at you, automating your way out of labor.'
+  },
+  firstIncidentResolved: {
+    label: '+150 tickets +25 XP',
+    tickets: 150,
+    xp: 25,
+    toast: '🚨 Firefight bonus: +150 tickets and +25 XP. Competence remains suspicious but profitable.'
+  },
+  firstShiftComplete: {
+    label: '+250 tickets +60 XP',
+    tickets: 250,
+    xp: 60,
+    toast: '🏁 First shift complete: +250 tickets and +60 XP. Fine. You survived probation.'
+  },
+};
+
+function hasClaimedOnboardingReward(id) {
+  return (S.tutorialRewardsClaimed || []).includes(id);
+}
+
+function claimOnboardingReward(id) {
+  const reward = ONBOARDING_REWARDS[id];
+  if (!reward || hasClaimedOnboardingReward(id)) return false;
+
+  S.tutorialRewardsClaimed = [...(S.tutorialRewardsClaimed || []), id];
+  if (reward.tickets) gainTickets(reward.tickets);
+  if (reward.xp) gainXp(reward.xp);
+  toast(reward.toast, 'gold');
+  return true;
+}
+
+function tryCompleteFirstShiftBonus() {
+  if (
+    S.tutorialFirstClickDone &&
+    S.tutorialFirstRecruitDone &&
+    S.tutorialFirstUpgradeDone &&
+    S.tutorialFirstIncidentResolved
+  ) {
+    claimOnboardingReward('firstShiftComplete');
+  }
+}
+
 function renderOnboarding() {
   const panel = document.getElementById('onboarding-panel');
   if (!panel) return;
@@ -451,35 +511,57 @@ function renderOnboarding() {
   const recruitTarget = getCheapestRecruitTarget();
   const upgradeTarget = getCheapestUpgradeTarget();
   const steps = [
-    { done: S.tutorialFirstClickDone, text: 'Resolve your first ticket and start the queue moving.' },
     {
+      id: 'firstClick',
+      done: S.tutorialFirstClickDone,
+      text: 'Resolve your first ticket and start the queue moving.'
+    },
+    {
+      id: 'firstRecruit',
       done: S.tutorialFirstRecruitDone,
       text: recruitTarget
         ? `Recruit your first hero (${recruitTarget.hero.name} is ${fmt(recruitTarget.cost)} tickets right now).`
         : 'Recruit your first hero so tickets keep moving without your fingers.',
     },
     {
+      id: 'firstUpgrade',
       done: S.tutorialFirstUpgradeDone,
       text: upgradeTarget
         ? `Buy your first upgrade (${upgradeTarget.upgrade.name} starts at ${fmt(upgradeTarget.cost)} tickets).`
         : 'Buy your first upgrade and begin automating your way into management.',
     },
-    { done: S.tutorialFirstIncidentResolved, text: 'Survive your first incident without collecting a strike.' },
+    {
+      id: 'firstIncidentResolved',
+      done: S.tutorialFirstIncidentResolved,
+      text: 'Survive your first incident without collecting a strike.'
+    },
   ];
 
   const allDone = steps.every(step => step.done);
   if (S.tutorialDismissed || allDone) {
-    panel.classList.add('hidden');
-    return;
+    if (allDone && !hasClaimedOnboardingReward('firstShiftComplete')) {
+      panel.classList.remove('hidden');
+    } else {
+      panel.classList.add('hidden');
+      return;
+    }
+  } else {
+    panel.classList.remove('hidden');
   }
-  panel.classList.remove('hidden');
 
-  document.getElementById('onboarding-checklist').innerHTML = steps.map(step => `
-    <div class="onboarding-item ${step.done ? 'done' : ''}">
-      <span class="onboarding-mark">${step.done ? '✓' : '•'}</span>
-      <span>${step.text}</span>
-    </div>
-  `).join('');
+  document.getElementById('onboarding-checklist').innerHTML = steps.map(step => {
+    const reward = ONBOARDING_REWARDS[step.id];
+    const claimed = hasClaimedOnboardingReward(step.id);
+    return `
+      <div class="onboarding-item ${step.done ? 'done' : ''}">
+        <span class="onboarding-mark">${step.done ? '✓' : '•'}</span>
+        <div class="onboarding-copy">
+          <span>${step.text}</span>
+          ${reward ? `<span class="onboarding-reward ${claimed ? 'claimed' : ''}">${claimed ? 'Claimed' : reward.label}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
 
   let tip = 'Clear a few tickets to get the queue moving.';
   let actionLabel = 'Resolve Some Tickets';
@@ -489,7 +571,11 @@ function renderOnboarding() {
   const upgradeNeeded = upgradeTarget ? Math.max(0, upgradeTarget.cost - S.tickets) : Infinity;
   const shouldPrioritizeUpgrade = !S.tutorialFirstUpgradeDone && !S.tutorialFirstRecruitDone && upgradeNeeded < recruitNeeded;
 
-  if (!S.tutorialFirstClickDone) {
+  if (allDone && !hasClaimedOnboardingReward('firstShiftComplete')) {
+    tip = 'All first-shift objectives complete. Cash the completion bonus and enjoy your temporary delusion of competence.';
+    actionLabel = 'Claim First Shift Bonus';
+    action = 'claim-first-shift';
+  } else if (!S.tutorialFirstClickDone) {
     tip = 'Mash Resolve Ticket a few times. Momentum first, dignity later.';
     actionLabel = 'Resolve Some Tickets';
     action = 'click';
@@ -621,6 +707,7 @@ function handleClick(evt) {
   if (!S.tutorialFirstClickDone) {
     S.tutorialFirstClickDone = true;
     toast('🧾 Queue open. Good. Now turn panic into throughput.', 'gold');
+    claimOnboardingReward('firstClick');
     renderOnboarding();
   }
 
@@ -894,6 +981,8 @@ function buyUpgrade(id) {
   if (!S.tutorialFirstUpgradeDone) {
     S.tutorialFirstUpgradeDone = true;
     toast('⚙️ First upgrade online. Congratulations, you have invented process.', 'gold');
+    claimOnboardingReward('firstUpgrade');
+    tryCompleteFirstShiftBonus();
     renderOnboarding();
   }
   renderUpgrades();
@@ -938,6 +1027,8 @@ function recruitHero(id) {
   if (!S.tutorialFirstRecruitDone) {
     S.tutorialFirstRecruitDone = true;
     toast('👥 First hire secured. Delegation: the first step toward management and plausible deniability.', 'gold');
+    claimOnboardingReward('firstRecruit');
+    tryCompleteFirstShiftBonus();
     renderOnboarding();
   }
   renderSquad();
@@ -1630,6 +1721,8 @@ function dispatchHeroToIncident(heroId) {
     if (!S.tutorialFirstIncidentResolved) {
       S.tutorialFirstIncidentResolved = true;
       toast('🛡️ Incident contained. Excellent. Pretend this level of competence is sustainable.', 'gold');
+      claimOnboardingReward('firstIncidentResolved');
+      tryCompleteFirstShiftBonus();
       renderOnboarding();
     }
     toast(`✅ ${hero.name}: ${match.label} — +${fmt(reward)} tickets!`, 'green');
@@ -1754,6 +1847,13 @@ function endMinigame(success) {
 
   if (reward > 0) { gainTickets(reward); gainXp(calcXpGain(reward)); }
   S.incidentsResolved++;
+  if ((success || mgState.progress >= 0.5) && !S.tutorialFirstIncidentResolved) {
+    S.tutorialFirstIncidentResolved = true;
+    toast('🛡️ Incident contained. Excellent. Pretend this level of competence is sustainable.', 'gold');
+    claimOnboardingReward('firstIncidentResolved');
+    tryCompleteFirstShiftBonus();
+    renderOnboarding();
+  }
   logIncidentEvent(mgState.inc, outcome, {
     reward,
     responder: 'Chuck Sterling',
@@ -2562,6 +2662,11 @@ function initTabs() {
     else if (action === 'click') document.getElementById('main-clicker').click();
     else if (action === 'incident') openDispatchModal();
     else if (action === 'help') openHelp();
+    else if (action === 'claim-first-shift') {
+      if (claimOnboardingReward('firstShiftComplete')) {
+        renderOnboarding();
+      }
+    }
   });
   // Incident: RESPOND NOW opens dispatch modal
   document.getElementById('incident-resolve').addEventListener('click', openDispatchModal);
