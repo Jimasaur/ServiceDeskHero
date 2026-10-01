@@ -1,7 +1,7 @@
 /** Original, fictional training encounters. Actions affect only the local game. */
 export const BOSSES = Object.freeze([
   {
-    id: 'PrinterThatCannotBeFound', at: 30, techSkill: 8, patience: 26,
+    id: 'PrinterThatCannotBeFound', afterNormal: 4, techSkill: 8,
     title: 'The Printer That Cannot Be Found',
     entrance: 'The curtains part. A printer has entered witness protection. Two faults. One spectacularly unhelpful display.',
     defeat: 'Address corrected. Driver matched. The beast produces one entirely ordinary sheet of paper. Thunderous applause.',
@@ -31,7 +31,7 @@ export const BOSSES = Object.freeze([
     ],
   },
   {
-    id: 'Friday4:59ChangeRequest', at: 60, techSkill: 2, patience: 26,
+    id: 'Friday4:59ChangeRequest', afterNormal: 12, techSkill: 2,
     title: 'The Friday 4:59 Change Request',
     entrance: 'Behold: a change request wearing a tiny emergency crown. It demands production. You demand a rollback plan.',
     defeat: 'The failed canary is rolled back, service is verified healthy, and the change returns to testing. The weekend receives a stay of execution.',

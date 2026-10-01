@@ -1,4 +1,4 @@
-# Rush Hour playtest checklist
+# First Shift playtest checklist
 
 This release is a development playtest, not a marketing launch. No advertising, analytics, payment flow, new backend, or account/security changes are included.
 
@@ -7,7 +7,7 @@ This release is a development playtest, not a marketing launch. No advertising, 
 - Pass `npm run check` and `npm test`
 - Pass the draft PR's **Game playtest** workflow
 - Inspect desktop and mobile screenshots in `game-playtest-evidence`
-- Check technical fixes, two-stage bosses, Faker success/failure, achievement awards, pause/replay, and storage isolation
+- Check acknowledgement-before-SLA, 900-second Sev 3 and report-time 60-second Sev 1 clocks, technical fixes, two-stage bosses, Faker success/failure, pause/replay, and storage isolation
 - Retain the existing career entry point and `sdh_save_v2`
 
 ## After release

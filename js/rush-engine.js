@@ -2,7 +2,8 @@
 import { TICKETS } from './rush-tickets.js';
 import { BOSSES } from './rush-bosses.js';
 export { BOSSES } from './rush-bosses.js';
-export const DURATION = 90;
+export const TOTAL_NORMAL = 12;
+export const SLA_SECONDS = Object.freeze({ 3: 15 * 60, 1: 60 });
 export const CAPACITY = 5;
 export const ACTIONS = Object.freeze({
   fix: { seconds: 2.4, points: 150 },
@@ -35,17 +36,21 @@ function shuffle(items, random) {
 const EPSILON = 1e-7;
 const tickTime = n => Math.round(n * 1e9) / 1e9;
 function actionsFor(source, random) { return shuffle(source.actions.map(a => ({ ...a })), random); }
+/** The legacy relaxed argument is accepted for callers; every shift uses the same paced lifecycle. */
 export function createGame(seed = 'practice', relaxed = false, classId = 'engineer') {
   const random = seededRandom(seed);
   const game = { seed: String(seed), relaxed: Boolean(relaxed), classId: Object.hasOwn(CLASSES, classId) ? classId : 'engineer',
-    random, deck: shuffle(TICKETS, random), cursor: 0, time: 0, score: 0, morale: 100,
+    random, deck: shuffle(TICKETS, random).slice(0, TOTAL_NORMAL), cursor: 0, time: 0, score: 0, morale: 100,
     streak: 0, bestStreak: 0, resolved: 0, fixes: 0, patches: 0, wrong: 0, missed: 0,
     assists: 3, assisted: 0, bluffs: 0, successfulBluffs: 0, bossesDefeated: 0, bossesMissed: 0,
     bossStagesCleared: 0, achievements: [], achievementPoints: 0,
-    queue: [], returns: [], nextArrival: 5.5 * (relaxed ? 1.35 : 1), nextId: 1,
+    completedNormal: 0, reportedNormal: 0, totalNormal: TOTAL_NORMAL, normalFixes: 0,
+    sev1Unlocked: false, printerDefeated: false,
+    bossStatus: Object.fromEntries(BOSSES.map(boss => [boss.id, 'pending'])),
+    queue: [], returns: [], nextId: 1,
     selected: null, work: null, phase: 0, status: 'playing', events: [] };
-  addTicket(game);
-  emit(game, 'narrator', { text: 'Welcome to the Incident Theatre. Every ticket has a motive. Most have the wrong cable.' });
+  progressShift(game);
+  emit(game, 'narrator', { text: 'Welcome to the Incident Theatre. Read at your own pace, then acknowledge your first Sev 3 ticket to start its 15-minute SLA.' });
   return game;
 }
 function emit(g, type, detail = {}) { g.events.push({ type, ...detail }); }
@@ -58,44 +63,91 @@ function award(g, id) {
 function repairSelection(g) {
   if (!g.queue.some(t => t.id === g.selected)) g.selected = g.queue[0]?.id ?? null;
 }
-function missTicket(g, ticket, type = 'expired') {
-  const penalty = ticket?.boss ? 25 : 14;
-  g.morale = Math.max(0, g.morale - penalty); g.missed++; g.streak = 0;
-  if (ticket?.boss) g.bossesMissed++;
-  emit(g, type, { id: ticket?.id, boss: !!ticket?.boss, bossId: ticket?.bossId, penalty,
-    text: type === 'overflow' ? `The queue has no seats left. ${ticket?.source.title || 'A caller'} escalates. −${penalty} morale` : `${ticket.source.title}: the patience curtain falls. −${penalty} morale` });
+function settleTicket(g, ticket, resolution) {
+  if (ticket.resolution) return;
+  ticket.resolution = resolution;
+  if (ticket.boss) {
+    g.bossStatus[ticket.bossId] = resolution === 'fix' ? 'defeated' : 'missed';
+    if (ticket.bossId === BOSSES[0].id && resolution === 'fix') g.printerDefeated = true;
+  } else {
+    g.completedNormal++;
+    if (resolution === 'fix') g.normalFixes++;
+  }
 }
-function addTicket(g, returning = null) {
-  let source;
-  if (returning) source = returning.source;
-  else {
-    if (g.cursor >= g.deck.length) { g.deck = shuffle(TICKETS, g.random); g.cursor = 0; }
-    source = g.deck[g.cursor++];
-  }
-  const urgent = returning ? false : g.nextId > 2 && g.nextId % 4 === 0;
-  const patience = (urgent ? 16 : 24) * (g.relaxed ? 1.6 : 1);
-  const ticket = { id: g.nextId++, source, urgent, reopened: !!returning,
-    arrival: g.time, deadline: tickTime(g.time + patience), patience,
+function missTicket(g, ticket) {
+  if (ticket.resolution) return;
+  const penalty = ticket.boss ? 25 : 14;
+  g.morale = Math.max(0, g.morale - penalty); g.missed++; g.streak = 0;
+  if (ticket.boss) g.bossesMissed++;
+  settleTicket(g, ticket, 'missed');
+  if (g.work?.ticketId === ticket.id) g.work = null;
+  emit(g, 'expired', { id: ticket.id, boss: !!ticket.boss, bossId: ticket.bossId, penalty,
+    text: `${ticket.source.title}: SLA missed. −${penalty} morale` });
+}
+function reportTicket(g, source, severity, extra = {}) {
+  const id = g.nextId++, slaSeconds = SLA_SECONDS[severity];
+  const ticket = { id, rootId: id, source, severity, slaSeconds, urgent: severity === 1,
+    acknowledged: false, acknowledgedAt: null, reportedAt: g.time, arrival: g.time,
+    deadline: severity === 1 ? tickTime(g.time + slaSeconds) : null, patience: slaSeconds,
+    reopened: false, patchUsed: false, resolution: null, ...extra,
     actions: actionsFor(source, g.random) };
-  if (g.queue.length >= CAPACITY) missTicket(g, ticket, 'overflow');
-  else {
-    g.queue.push(ticket); repairSelection(g);
-    emit(g, returning ? 'return' : 'arrival', { id: ticket.id, text: returning ? `${source.title} returns for its encore. Temporary really meant temporary.` : source.title });
-  }
+  g.queue.push(ticket); repairSelection(g);
+  return ticket;
+}
+function addTicket(g) {
+  if (g.reportedNormal >= g.totalNormal) return;
+  const source = g.deck[g.cursor++];
+  const ticket = reportTicket(g, source, g.sev1Unlocked ? 1 : 3);
+  g.reportedNormal++;
+  emit(g, 'arrival', { id: ticket.id, severity: ticket.severity, text: source.title });
+}
+function returnTicket(g, returning) {
+  const ticket = returning.ticket;
+  ticket.reopened = true;
+  g.queue.push(ticket); repairSelection(g);
+  emit(g, 'return', { id: ticket.id, severity: ticket.severity,
+    text: `${ticket.source.title} returns for its encore. The original SLA is still running; this issue now needs a lasting fix.` });
 }
 function addBoss(g, boss) {
-  if (g.queue.length >= CAPACITY) {
-    // Active work and other bosses are protected; normal play always has an eligible seat.
-    const victim = g.queue.filter(t => !t.boss && t.id !== g.work?.ticketId)
-      .sort((a, b) => a.arrival - b.arrival || a.id - b.id)[0];
-    if (victim) { g.queue = g.queue.filter(t => t.id !== victim.id); missTicket(g, victim, 'overflow'); }
+  const severity = boss.id === BOSSES[0].id ? 3 : g.sev1Unlocked ? 1 : 3;
+  const ticket = reportTicket(g, boss.stages[0], severity, {
+    boss: true, bossId: boss.id, stage: 1, stageCount: boss.stages.length,
+    techSkill: boss.techSkill, bluffed: false,
+  });
+  g.bossStatus[boss.id] = 'active';
+  emit(g, 'boss-arrival', { id: ticket.id, bossId: boss.id, severity, techSkill: boss.techSkill,
+    title: boss.title, text: boss.entrance });
+}
+/** Reports the next authored issue only when the previous issue is finally settled. */
+function progressShift(g) {
+  if (g.status !== 'playing') return;
+  if (g.morale <= 0) { endGame(g); return; }
+  if (!g.sev1Unlocked && g.normalFixes >= 8 && g.printerDefeated) {
+    g.sev1Unlocked = true; g.phase = 2;
+    emit(g, 'sev1-unlocked', { text: 'Sev 1 unlocked: eight lasting fixes and the printer defeated. New urgent incidents have a one-minute SLA starting the instant they are reported.' });
+    emit(g, 'phase', { phase: 2, text: 'ACT III: SEV 1 INCIDENTS · THE CLOCK STARTS AT REPORT' });
   }
-  const source = boss.stages[0], patience = boss.patience * (g.relaxed ? 1.6 : 1);
-  const ticket = { id: g.nextId++, boss: true, bossId: boss.id, stage: 1, stageCount: boss.stages.length,
-    techSkill: boss.techSkill, bluffed: false, source, urgent: true, reopened: false,
-    arrival: g.time, deadline: tickTime(g.time + patience), patience, actions: actionsFor(source, g.random) };
-  g.queue.push(ticket); repairSelection(g);
-  emit(g, 'boss-arrival', { id: ticket.id, bossId: boss.id, techSkill: boss.techSkill, title: boss.title, text: boss.entrance });
+  if (g.queue.length || g.returns.length || g.work) return;
+  const boss = BOSSES.find(b => g.bossStatus[b.id] === 'pending' && g.completedNormal >= b.afterNormal);
+  if (boss) {
+    if (boss.id === BOSSES[0].id) {
+      g.phase = 1;
+      emit(g, 'phase', { phase: 1, text: 'ACT II: THE PRINTER TAKES THE STAGE · STILL SEV 3' });
+    }
+    addBoss(g, boss);
+  } else if (g.reportedNormal < g.totalNormal) addTicket(g);
+  else if (g.completedNormal === g.totalNormal && Object.values(g.bossStatus).every(s => s === 'defeated' || s === 'missed')) endGame(g);
+}
+/** Acknowledgement starts a Sev 3 SLA once; Sev 1 clocks already started at report. */
+export function acknowledgeTicket(g, id) {
+  if (g.status !== 'playing') return false;
+  const ticket = g.queue.find(t => t.id === id);
+  if (!ticket || ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON)) return false;
+  ticket.acknowledged = true; ticket.acknowledgedAt = g.time;
+  if (ticket.deadline === null) ticket.deadline = tickTime(g.time + ticket.slaSeconds);
+  emit(g, 'acknowledged', { id, severity: ticket.severity, deadline: ticket.deadline,
+    text: ticket.severity === 3 ? 'Acknowledged. Your 15-minute SLA starts now.' : 'Acknowledged. The Sev 1 SLA has been running since this incident was reported.' });
+  return true;
 }
 export function selectTicket(g, id) {
   if (g.status !== 'playing' || !g.queue.some(t => t.id === id)) return false;
@@ -105,7 +157,8 @@ export function selectTicket(g, id) {
 export function takeAction(g, index, expectedTicketId = g.selected, expectedStage = undefined) {
   if (g.status !== 'playing' || g.work || g.selected !== expectedTicketId) return false;
   const ticket = g.queue.find(t => t.id === g.selected);
-  if (!ticket || (expectedStage !== undefined && ticket.stage !== expectedStage)) return false;
+  if (!ticket || !ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON) ||
+      (expectedStage !== undefined && ticket.stage !== expectedStage)) return false;
   let action;
   if (index === 'assist') {
     if (ticket.boss || g.assists <= 0) return false;
@@ -114,7 +167,7 @@ export function takeAction(g, index, expectedTicketId = g.selected, expectedStag
     if (g.classId !== 'faker' || !ticket.boss || ticket.bluffed) return false;
     action = { kind: 'bluff', label: 'Deploy impressive jargon' };
   } else if (Number.isInteger(index) && index >= 0) action = ticket.actions[index];
-  if (!action || action.tried || !Object.hasOwn(ACTIONS, action.kind)) return false;
+  if (!action || action.tried || !Object.hasOwn(ACTIONS, action.kind) || (action.kind === 'patch' && ticket.patchUsed)) return false;
   if (action.kind === 'assist') g.assists--;
   if (action.kind === 'bluff') { ticket.bluffed = true; g.bluffs++; }
   g.work = { ticketId: ticket.id, stage: ticket.stage, action, started: g.time, ends: tickTime(g.time + ACTIONS[action.kind].seconds) };
@@ -162,17 +215,25 @@ function completeWork(g) {
         emit(g, 'boss-defeated', { id: ticket.id, bossId: ticket.bossId, title: boss.title, points: 350, text: boss.defeat });
       }
     } else closed = true;
-    if (closed) { g.queue = g.queue.filter(t => t.id !== ticket.id); g.resolved++; g.fixes++; }
+    if (closed) {
+      g.queue = g.queue.filter(t => t.id !== ticket.id); g.resolved++; g.fixes++;
+      settleTicket(g, ticket, 'fix');
+    }
   } else {
-    g.queue = g.queue.filter(t => t.id !== ticket.id); g.resolved++; g.streak = 0;
+    g.queue = g.queue.filter(t => t.id !== ticket.id); g.streak = 0;
     if (kind === 'patch') {
+      ticket.patchUsed = true;
+      ticket.actions = ticket.actions.map(a => a.kind === 'patch' ? { ...a, tried: true } : a);
       g.patches++; points = ACTIONS.patch.points;
-      g.returns.push({ at: tickTime(g.time + 11), source: ticket.source });
-    } else { g.assisted++; points = ACTIONS.assist.points; }
+      g.returns.push({ at: tickTime(g.time + 11), ticket, source: ticket.source });
+    } else {
+      g.assisted++; g.resolved++; points = ACTIONS.assist.points; closed = true;
+      settleTicket(g, ticket, 'assist');
+    }
   }
   g.score += points; repairSelection(g);
   emit(g, 'outcome', { kind, points, text: work.action.outcome, title: completedTitle, streak: g.streak,
-    boss: !!ticket.boss, stage: completedStage, defeated, closed: closed || kind === 'patch' || kind === 'assist' });
+    boss: !!ticket.boss, stage: completedStage, defeated, closed });
   if (kind === 'fix') {
     if (closed) award(g, 'firstfix');
     if (g.streak >= 3) award(g, 'threestreak');
@@ -180,48 +241,49 @@ function completeWork(g) {
   }
 }
 function expireTickets(g) {
-  const expired = g.queue.filter(t => t.deadline <= g.time + EPSILON && t.id !== g.work?.ticketId);
-  for (const t of expired) { g.queue = g.queue.filter(x => x.id !== t.id); missTicket(g, t); }
+  const expired = [...g.queue, ...g.returns.map(r => r.ticket)]
+    .filter(t => t.deadline !== null && t.deadline <= g.time + EPSILON);
+  for (const ticket of expired) {
+    g.queue = g.queue.filter(t => t.id !== ticket.id);
+    g.returns = g.returns.filter(r => r.ticket.id !== ticket.id);
+    missTicket(g, ticket);
+  }
   repairSelection(g);
 }
 function endGame(g) {
   if (g.status === 'finished') return;
   g.status = 'finished'; g.work = null;
+  g.completion = g.morale <= 0 ? 'morale' : g.sev1Unlocked ? 'career' : 'practice';
   g.bonus = g.morale > 0 ? Math.round(g.morale * 3) : 0; g.score += g.bonus;
-  if (g.time >= DURATION - EPSILON && g.morale > 0 && g.missed === 0 && g.wrong === 0) award(g, 'perfectsurvival');
-  emit(g, 'end');
+  if (g.completedNormal === g.totalNormal && g.bossesDefeated === BOSSES.length &&
+      g.morale > 0 && g.missed === 0 && g.wrong === 0) award(g, 'perfectsurvival');
+  emit(g, 'end', { completion: g.completion });
 }
-/** Event-boundary stepping means frame rate cannot change results. Active work protects its SLA. */
+/** Event-boundary stepping keeps results independent of frame rate. Pausing freezes all clocks. */
 export function advance(g, seconds) {
   if (g.status !== 'playing' || !Number.isFinite(seconds) || seconds <= 0) return;
-  const target = Math.min(DURATION, tickTime(g.time + seconds));
+  const target = tickTime(g.time + seconds);
+  if (!Number.isFinite(target)) return;
   while (g.time < target - EPSILON && g.status === 'playing') {
-    const deadlines = g.queue.filter(t => t.id !== g.work?.ticketId).map(t => t.deadline);
-    const boundary = Math.min(target, g.nextArrival, g.work?.ends ?? Infinity,
-      ...g.returns.map(r => r.at), ...deadlines, (g.phase + 1) * 30);
+    const deadlines = [...g.queue, ...g.returns.map(r => r.ticket)]
+      .filter(t => t.deadline !== null).map(t => t.deadline);
+    const boundary = Math.min(target, g.work?.ends ?? Infinity, ...g.returns.map(r => r.at), ...deadlines);
     g.time = Math.max(g.time, boundary);
+    // Work completed exactly on the deadline succeeds; work still in progress expires.
     if (g.work && g.work.ends <= g.time + EPSILON) completeWork(g);
     expireTickets(g);
-    if (g.time >= DURATION - EPSILON || g.morale <= 0) { endGame(g); break; }
-    if (g.phase < 2 && g.time >= (g.phase + 1) * 30 - EPSILON) {
-      g.phase++;
-      emit(g, 'phase', { phase: g.phase, text: g.phase === 1 ? 'ACT II: THE PRINTER TAKES THE STAGE' : 'ACT III: THE FRIDAY CHANGE REQUEST' });
-      addBoss(g, BOSSES[g.phase - 1]);
-    }
+    if (g.morale <= 0) { endGame(g); break; }
     const due = g.returns.filter(r => r.at <= g.time + EPSILON);
     g.returns = g.returns.filter(r => r.at > g.time + EPSILON);
-    due.forEach(r => addTicket(g, r));
-    if (g.nextArrival <= g.time + EPSILON) {
-      addTicket(g);
-      g.nextArrival = tickTime(g.time + [5.5, 4.6, 3.8][g.phase] * (g.relaxed ? 1.35 : 1));
-    }
-    if (g.morale <= 0) endGame(g);
+    due.forEach(r => returnTicket(g, r));
+    progressShift(g);
   }
 }
 export function drainEvents(g) { return g.events.splice(0); }
 export function getRank(g) {
   if (g.morale <= 0) return { title: 'Out of office', line: 'The queue has seized the theatre. Management calls this audience participation.' };
-  if (g.score >= 6200) return { title: 'Incident Theatre Legend', line: 'A standing ovation. Even the printer rises, mostly because its stand is broken.' };
+  if (g.completion === 'practice') return { title: 'Practice Shift Complete', line: 'Keep building your diagnosis skills. Eight lasting normal fixes and a printer defeat unlock Sev 1 incidents.' };
+  if (g.score >= (g.classId === 'faker' ? 5800 : 6200)) return { title: 'Incident Theatre Legend', line: 'A standing ovation. Even the printer rises, mostly because its stand is broken.' };
   if (g.score >= 4400) return { title: 'Master of the Ticket Bell', line: 'Chaos arrived with a speech. You sent it away with a working test case.' };
   if (g.score >= 2800) return { title: 'Queue Conjurer', line: 'A lovely performance. Please document the trick before your next holiday.' };
   return { title: 'Certified Survivor', line: 'The curtain falls. You are still standing. That counts as a successful show.' };

@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Service Desk Hero — Rush Hour</title>
-  <meta name="description" content="90 seconds. One help desk. Everything is urgent. Read the clues, fix the tickets, and survive Rush Hour in this free IT game.">
+  <title>Service Desk Hero — First Shift</title>
+  <meta name="description" content="Read the issue, acknowledge the ticket, then fix the problem. An IT helpdesk game with generous early SLAs and technical boss battles.">
   <link rel="canonical" href="https://www.servicedeskhero.com/">
-  <meta property="og:title" content="Service Desk Hero — Rush Hour">
-  <meta property="og:description" content="90 seconds. One help desk. Everything is urgent. How long can you keep the queue under control?">
+  <meta property="og:title" content="Service Desk Hero — First Shift">
+  <meta property="og:description" content="Start with Sev 3 tickets and a 15-minute SLA after acknowledgement. Earn your way to Sev 1 incidents and technical boss battles.">
   <meta property="og:type" content="website"><meta property="og:url" content="https://www.servicedeskhero.com/">
   <meta property="og:image" content="https://www.servicedeskhero.com/assets/og-image.png">
   <meta name="theme-color" content="#10111e"><link rel="icon" href="assets/favicon.png"><link rel="manifest" href="manifest.json">
@@ -22,57 +22,57 @@
 <main id="main" tabindex="-1">
   <section id="lobby" class="lobby" aria-labelledby="lobby-title">
     <div class="lobby-copy">
-      <div class="eyebrow"><span class="pill purple">NEW SHIFT</span> THE 90-SECOND HELPDESK GAME</div>
-      <h1 id="lobby-title">Everything<br>is <span>urgent.</span></h1>
-      <p class="intro">The printer is a boss fight. Your supervisor is a hostile AI.<br class="desktop-only"> And yes, you actually have to know some IT.</p>
+      <div class="eyebrow"><span class="pill purple">NEW SHIFT</span> YOUR FIRST SHIFT · NO GLOBAL TIMER</div>
+      <h1 id="lobby-title">Read first.<br>Then <span>resolve.</span></h1>
+      <p class="intro">Start with Sev 3 tickets. Read the issue, then acknowledge it.<br class="desktop-only"> Your 15-minute SLA starts when you’re ready.</p>
       <div class="class-picker" role="group" aria-label="Choose your class">
         <button id="engineer-class" class="class-button selected" aria-pressed="true"><span aria-hidden="true">⌘</span><div><strong>Root Cause Ranger</strong><small>Knowledge is power. +25 per real fix.</small></div></button>
         <button id="faker-class" class="class-button" aria-pressed="false"><span aria-hidden="true">♜</span><div><strong>Fake It Till You Make It</strong><small>Bluff low-tech bosses. Still fix the problem.</small></div></button>
       </div>
-      <div class="mode-picker" role="group" aria-label="Choose pace">
-        <button id="standard-mode" class="mode-button selected" aria-pressed="true"><strong>Rush hour</strong><span>Bosses. Tickets. Questionable praise.</span></button>
-        <button id="relaxed-mode" class="mode-button" aria-pressed="false"><strong>Easy shift</strong><span>More time to read and think</span></button>
-      </div>
+      <div class="progression-preview"><span class="pill purple">SEV 3</span><span>15 min after acknowledgement</span><span class="progression-later">Later: SEV 1 · 60s from report</span></div>
       <button id="start-button" class="primary-button start-button"><span>Clock in</span><span class="keycap">ENTER</span></button>
       <div class="start-meta"><span id="daily-label"></span><span id="best-label">Local best: —</span></div>
       <p class="small-note">No login. No download. Original office chaos. Playtest in progress.</p>
     </div>
     <div class="lobby-right">
       <div class="sample-ticket">
-        <div class="sample-top"><span class="pill coral">P1 · EXTREMELY URGENT*</span><span class="mono">#0001</span></div>
+        <div class="sample-top"><span class="pill coral">SEV 3 · AWAITING ACK</span><span class="mono">#0001</span></div>
         <div class="sample-avatar" aria-hidden="true">🖨️</div>
         <h2>“It worked yesterday.”</h2>
         <p>“I haven’t changed anything.”<br><span class="muted">— Everyone, immediately before this ticket</span></p>
         <div class="sample-divider"></div>
-        <div class="sample-bottom"><span><span class="live-dot"></span> Waiting on IT</span><span>*according to the user</span></div>
+        <div class="sample-bottom"><span><span class="live-dot"></span> Ready when you are</span><span>the clock has not started</span></div>
       </div>
       <ol class="how-to">
-        <li><span>01</span><div><strong>Read the clue</strong><p>Pick a ticket. Find what’s actually broken.</p></div></li>
-        <li><span>02</span><div><strong>Fix it. Or buy time.</strong><p>Real fixes build a streak. Workarounds come back.</p></div></li>
-        <li><span>03</span><div><strong>Defeat your middle managers</strong><p>Two bosses. Actual diagnosis. An AI with deeply unhelpful achievements.</p></div></li>
+        <li><span>01</span><div><strong>Read the clue</strong><p>Take your time. Early tickets wait for acknowledgement.</p></div></li>
+        <li><span>02</span><div><strong>Acknowledge, then troubleshoot</strong><p>You get 15 minutes. Real fixes move your career forward.</p></div></li>
+        <li><span>03</span><div><strong>Earn the serious incidents</strong><p>Prove yourself, then unlock Sev 1s: 60 seconds from report. No waiting for ACK.</p></div></li>
       </ol>
     </div>
   </section>
 
-  <section id="game" hidden aria-label="Rush Hour game">
-    <div class="shift-strip"><span id="phase-name">MONDAY, 9:00 AM</span><span id="shift-flavor">A quiet start. Suspiciously quiet.</span><button id="pause-button" class="text-button">Pause <kbd>P</kbd></button></div>
+  <section id="game" hidden aria-label="First Shift game">
+    <div class="shift-strip"><span id="phase-name">THE TRAINING DESK</span><span id="shift-flavor">Read first. Acknowledge when ready.</span><button id="pause-button" class="text-button">Pause <kbd>P</kbd></button></div>
     <div class="hud">
-      <div class="hud-time"><span class="stat-label">SHIFT ENDS IN</span><strong id="time" role="timer" aria-label="Seconds remaining">1:30</strong><div class="time-track"><div id="time-fill"></div></div></div>
+      <div class="hud-time"><span class="stat-label">ISSUES HANDLED</span><strong id="time" aria-label="Issues handled out of fourteen">0 / 14</strong><div class="time-track"><div id="time-fill"></div></div></div>
       <div><span class="stat-label">SCORE</span><strong id="score">0</strong><span id="score-pop" class="score-pop"></span></div>
       <div><span class="stat-label">FIX STREAK</span><strong id="streak">0<span>×</span></strong><span id="streak-note" class="hud-sub">Make it stick</span></div>
       <div class="morale-hud"><span class="stat-label">TEAM MORALE <b id="morale-number">100%</b></span><div class="morale-track" role="progressbar" aria-label="Team morale" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" id="morale-meter"><div id="morale-fill"></div></div><span id="morale-text" class="hud-sub">Cautiously optimistic</span></div>
     </div>
     <div class="workspace">
       <aside class="queue-panel" aria-label="Ticket queue">
-        <div class="panel-title"><h2>Incoming</h2><span id="queue-count" class="count-badge">1 / 5</span></div>
-        <p class="panel-caption">Oldest first. Panic optional.</p>
+        <div class="panel-title"><h2>Incoming</h2><span id="queue-count" class="count-badge">1 open</span></div>
+        <p class="panel-caption">One issue at a time. Read before ACK.</p>
         <div id="queue" class="ticket-queue"></div>
-        <div class="queue-footer"><span class="live-dot"></span><span id="next-arrival">Next ticket in 5s</span></div>
+        <div class="queue-footer"><span class="live-dot"></span><span id="next-arrival">No deadline until acknowledgement</span></div>
       </aside>
       <section class="ticket-panel" aria-labelledby="ticket-title">
         <div id="active-ticket"></div>
         <div id="empty-ticket" hidden><span aria-hidden="true">☕</span><h2>Inbox zero.</h2><p>Enjoy this extremely temporary feeling.</p></div>
         <div id="work-status" class="work-status" hidden role="status"><div class="work-top"><span id="work-label">Working on it…</span><span id="work-seconds" aria-hidden="true"></span></div><div class="work-track" aria-hidden="true"><div id="work-fill"></div></div></div>
+        <div id="sla-panel" class="sla-panel"><div><span class="stat-label">SLA REMAINING</span><strong id="sla-time">Not started</strong></div><p id="sla-rule">Sev 3 · starts when you acknowledge</p></div>
+        <button id="acknowledge-button" class="primary-button acknowledge-button">Acknowledge issue</button>
+        <p id="acknowledged-note" class="acknowledged-note" hidden>Acknowledged. Your SLA is now active.</p>
         <div id="boss-status" class="boss-status" hidden></div><div id="action-area"><div class="action-heading"><span>YOUR MOVE</span><span class="keyboard-hint">Keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span></div><div id="actions" class="actions"></div><button id="assist-button" class="assist-button"><span>☎ Ask a teammate</span><span id="assist-count">3 left · +75 pts</span></button><button id="bluff-button" class="bluff-button" hidden><strong>“Let’s strategically realign the deliverables.”</strong><span id="bluff-description">Attempt a bluff · 0.8s</span></button></div>
       </section>
       <aside class="comms-panel" aria-label="Shift updates">
@@ -80,11 +80,11 @@
         <div class="supervisor"><span class="system-avatar" aria-hidden="true">&gt;_</span><div><strong>S.L.A.</strong><span>Sentient Liability Administrator</span></div></div>
         <p class="chat-message" id="chuck-message">“Welcome, replaceable asset. Your suffering has been marked P3.”</p>
         <div class="log-heading">LIVE FEED</div><div id="feed" class="feed"></div>
-        <div id="earned-achievements" class="earned-achievements"></div><div class="scoring-note"><strong>Make the fix stick.</strong><p>Real fix: 150 pts + class/streak bonus<br>Workaround: 55 pts, reopens in 11s<br>Wrong move: −10 morale<br>Missed ticket: −14 (boss: −25) morale</p></div>
+        <div id="earned-achievements" class="earned-achievements"></div><div class="scoring-note"><strong>Make the fix stick.</strong><p>Real fix: 150 pts + class/streak bonus<br>Workaround: 55 pts, reopens in 11s<br>Wrong move: −10 morale<br>Missed ticket: −14 (boss: −25) morale<br>Sev 3: 15 min after ACK<br>Sev 1: 60s from report</p></div>
       </aside>
     </div>
     <div id="outcome" class="outcome" role="status" aria-live="polite"></div>
-    <div class="bottom-bar"><span id="resolved-label">0 tickets closed</span><span>Morale left at clock-out = bonus points</span><span class="keyboard-hint"><kbd>Q</kbd> / <kbd>E</kbd> switch ticket · <kbd>P</kbd> pause</span></div>
+    <div class="bottom-bar"><span id="resolved-label">0 tickets closed</span><span>No global timer. Every issue has its own SLA.</span><span class="keyboard-hint"><kbd>A</kbd> acknowledge · <kbd>Q</kbd> / <kbd>E</kbd> switch ticket · <kbd>P</kbd> pause</span></div>
   </section>
 
   <section id="results" class="results" hidden aria-labelledby="result-title" tabindex="-1">
@@ -94,14 +94,14 @@
       <div class="final-score"><span id="final-score">0</span><small>POINTS</small></div><span id="new-best" class="pill lime" hidden>NEW LOCAL BEST</span>
       <div class="result-grid"><div><strong id="result-fixed">0</strong><span>lasting fixes</span></div><div><strong id="result-streak">0</strong><span>best streak</span></div><div><strong id="result-morale">0%</strong><span>morale left</span></div></div>
       <div class="result-breakdown" id="result-breakdown"></div><div id="result-achievements" class="result-achievements"></div><p class="result-tip" id="result-tip"></p>
-      <button id="replay-button" class="primary-button">One more shift</button><button id="share-button" class="secondary-button">Copy challenge</button><textarea id="share-fallback" aria-label="Challenge text to copy" readonly hidden></textarea><span id="share-status" class="small-note" role="status"></span>
-      <div class="result-links"><button id="menu-button" class="text-button">Change pace</button><a href="career.html">Build a career ↗</a></div><div class="receipt-bottom">TICKET CLOSED. PROBABLY.</div>
+      <button id="replay-button" class="primary-button">Start another shift</button><button id="share-button" class="secondary-button">Copy challenge</button><textarea id="share-fallback" aria-label="Challenge text to copy" readonly hidden></textarea><span id="share-status" class="small-note" role="status"></span>
+      <div class="result-links"><button id="menu-button" class="text-button">Change class</button><a href="career.html">Build a career ↗</a></div><div class="receipt-bottom">TICKET CLOSED. PROBABLY.</div>
     </div>
-    <p class="small-note">Same daily queue on replay. New challenge each day (UTC). Scores stay on this device.</p>
+    <p class="small-note">A finite shift: 12 tickets and 2 bosses. Replay the same daily cases. Scores stay on this device.</p>
   </section>
 </main>
 <footer class="app-footer"><span>A love letter to everyone who’s ever said “have you tried restarting it?”</span><span>Made for the people behind the tickets</span></footer>
-<dialog id="pause-dialog" aria-labelledby="pause-title"><div class="pause-content"><span class="eyebrow">DO NOT DISTURB</span><h2 id="pause-title">You’re on a break.</h2><p>The queue can wait. Really.<br>Clock and tickets are paused.</p><button id="resume-button" class="primary-button">Back to the chaos</button><button id="quit-button" class="text-button">End shift and see score</button></div></dialog>
+<dialog id="pause-dialog" aria-labelledby="pause-title"><div class="pause-content"><span class="eyebrow">DO NOT DISTURB</span><h2 id="pause-title">You’re on a break.</h2><p>The queue can wait. Really.<br>All game SLA clocks are paused, including Sev 1s.</p><button id="resume-button" class="primary-button">Back to the chaos</button><button id="quit-button" class="text-button">End shift and see score</button></div></dialog>
 <div id="achievement-banner" class="achievement-banner" role="status" hidden></div>
 <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 <noscript><p class="noscript">JavaScript is needed to play. Your browser can run the whole game locally once it’s enabled.</p></noscript>
