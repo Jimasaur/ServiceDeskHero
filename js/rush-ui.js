@@ -131,7 +131,7 @@ function render() {
       announce(`${ticket.source.title}. ${ticket.source.clue}`);
     }
   }
-  $('actions').querySelectorAll('button').forEach((button,i)=>{button.disabled = Boolean(game.work) || !!ticket?.actions[i]?.tried || game.status !== 'playing';});
+  $('actions').querySelectorAll('button').forEach((button,i)=>{button.disabled = !ticket || Boolean(game.work) || !!ticket?.actions[i]?.tried || game.status !== 'playing';});
   $('boss-status').hidden = !ticket?.boss;
   document.querySelector('.ticket-panel').classList.toggle('boss-active',Boolean(ticket?.boss));
   if (ticket?.boss) $('boss-status').innerHTML = `<span>TECH SKILL <b>${ticket.techSkill}/10</b></span><span>DIAGNOSIS <b>${ticket.stage}/2</b></span><span class="boss-health">${ticket.stage===1?'▰ ▰':'▱ ▰'}</span>`;

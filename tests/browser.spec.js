@@ -20,7 +20,7 @@ async function clickFix(page) {
   const buttons=page.locator('#actions button');
   for (let i=0; i<await buttons.count(); i++) {
     const b=buttons.nth(i), text=await b.innerText();
-    if (fixes.some(label=>text.includes(label)) && await b.isEnabled()) {await b.click();return true;}
+    if (fixes.some(label=>text.includes(label)) && await b.isVisible() && await b.isEnabled()) {await b.click();return true;}
   }
   return false;
 }
@@ -43,7 +43,7 @@ test('desktop round: pause, technical fixes, bosses, achievements, report, repla
   for(let i=0;i<110 && await page.locator('#game').isVisible();i++) {
     const boss=page.locator('#queue button').filter({hasText:'BOSS'});
     if(await boss.count()) {await boss.first().click(); if(!sawBoss){sawBoss=true;await page.screenshot({path:testInfo.outputPath('02-desktop-boss.png'),fullPage:true});}}
-    if(await page.locator('#actions button:enabled').count()) await clickFix(page);
+    if(await page.locator('#actions button:visible:enabled').count()) await clickFix(page);
     await page.clock.runFor(1000);
   }
   expect(sawBoss).toBe(true);await expect(page.locator('#results')).toBeVisible();
@@ -90,7 +90,7 @@ test('mobile Faker can bluff low-tech boss without resolving it; high-tech boss 
       }
       if(!tookMobileShot){tookMobileShot=true;await page.screenshot({path:testInfo.outputPath('05-mobile-boss.png'),fullPage:true});await assertNoOverflow(page);}
     }
-    if(await page.locator('#actions button:enabled').count())await clickFix(page);
+    if(await page.locator('#actions button:visible:enabled').count())await clickFix(page);
     await page.clock.runFor(1000);
   }
   expect(caught).toBe(true);expect(fooled).toBe(true);
@@ -128,4 +128,25 @@ test('Rush remains playable when storage throws and under reduced motion',async(
   await page.emulateMedia({reducedMotion:'reduce'});await boot(page);
   await page.getByRole('button',{name:'Clock in'}).click();await clickFix(page);await page.clock.runFor(2500);
   await expect(page.locator('#resolved-label')).toHaveText('1 ticket closed');
+});
+test('an existing career resumes without difficulty reset and stays separate from Rush',async({page})=>{
+  await page.addInitScript(()=>{localStorage.setItem('sdh_save_v2',JSON.stringify({tickets:420,lifetimeTickets:9001,level:7,lastSave:Date.now(),lastTick:Date.now(),difficultyId:'medium'}));localStorage.setItem('sdh_seen_help','1');});
+  await boot(page);await page.getByRole('link',{name:/Career mode/}).click();
+  await expect(page.locator('#difficulty-modal')).not.toBeVisible();
+  await expect(page.locator('#hero-level')).toHaveText('7');await expect(page.locator('#tickets-display')).toHaveText('420');
+  await page.getByRole('link',{name:'Back to Rush Hour'}).click();
+  await expect(page.locator('#lobby')).toBeVisible();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sdh_save_v2')).lifetimeTickets)).toBe(9001);
+});
+test('visibility loss auto-pauses and next-day replay gets the new daily seed',async({page})=>{
+  await boot(page);await page.getByRole('button',{name:'Clock in'}).click();
+  // Synthetic visibility event is deterministic in headless CI; exercise the actual page listener.
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));});
+  await expect(page.getByRole('dialog')).toBeVisible();
+  const before=await page.locator('#time').innerText();await page.clock.runFor(30000);await expect(page.locator('#time')).toHaveText(before);
+  await page.getByRole('button',{name:'End shift and see score'}).click();
+  await page.clock.setSystemTime(new Date('2026-10-02T00:00:01Z'));
+  await page.getByRole('button',{name:'One more shift'}).click();
+  await page.getByRole('button',{name:'Pause P',exact:true}).click();await page.getByRole('button',{name:'End shift and see score'}).click();
+  await page.getByRole('button',{name:'Change pace'}).click();await expect(page.locator('#daily-label')).toContainText('10/02');
 });
