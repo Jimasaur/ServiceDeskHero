@@ -1,13 +1,16 @@
 {
   "name": "Service Desk Hero",
   "short_name": "SDH",
-  "description": "Click, automate, and climb the IT ladder from Help Desk Analyst to CIO in this addicting idle clicker game.",
+  "description": "Survive Rush Hour: technical tickets, boss battles and a delightfully unhelpful AI. Or build your team in Career mode.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#060414",
-  "theme_color": "#7c5cfc",
+  "theme_color": "#10111e",
   "orientation": "any",
-  "categories": ["games", "entertainment"],
+  "categories": [
+    "games",
+    "entertainment"
+  ],
   "icons": [
     {
       "src": "assets/favicon.png",
