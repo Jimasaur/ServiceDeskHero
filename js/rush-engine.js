@@ -1,9 +1,17 @@
 /** Pure deterministic simulation. No browser APIs, storage, or network. */
 import { TICKETS } from './rush-tickets.js';
+import { PROJECTS, PROJECT_ACTIONS, incidentSource } from './rush-projects.js';
+export { PROJECTS, PROJECT_ACTIONS } from './rush-projects.js';
 import { BOSSES } from './rush-bosses.js';
 export { BOSSES } from './rush-bosses.js';
 export const TOTAL_NORMAL = 12;
-export const SLA_SECONDS = Object.freeze({ 3: 15 * 60, 1: 60 });
+export const SLA_SECONDS = Object.freeze({ 3: 15 * 60, 2: 180, 1: 60 });
+export const ARRIVAL_SECONDS = Object.freeze({ min: 30, max: 120 });
+export const INVESTIGATIONS = Object.freeze({
+  question: { seconds: 2 },
+  diagnostic: { seconds: 4 },
+});
+// Legacy display target only. A finite shift retains every reported issue, including overflow.
 export const CAPACITY = 5;
 export const ACTIONS = Object.freeze({
   fix: { seconds: 2.4, points: 150 },
@@ -40,16 +48,20 @@ function actionsFor(source, random) { return shuffle(source.actions.map(a => ({ 
 export function createGame(seed = 'practice', relaxed = false, classId = 'engineer') {
   const random = seededRandom(seed);
   const game = { seed: String(seed), relaxed: Boolean(relaxed), classId: Object.hasOwn(CLASSES, classId) ? classId : 'engineer',
-    random, deck: shuffle(TICKETS, random).slice(0, TOTAL_NORMAL), cursor: 0, time: 0, score: 0, morale: 100,
+    random, arrivalRandom: seededRandom(`${seed}:arrivals`), nextArrival: null,
+    deck: shuffle(TICKETS, random).slice(0, TOTAL_NORMAL), cursor: 0, time: 0, score: 0, morale: 100,
     streak: 0, bestStreak: 0, resolved: 0, fixes: 0, patches: 0, wrong: 0, missed: 0,
     assists: 3, assisted: 0, bluffs: 0, successfulBluffs: 0, bossesDefeated: 0, bossesMissed: 0,
     bossStagesCleared: 0, achievements: [], achievementPoints: 0,
     completedNormal: 0, reportedNormal: 0, totalNormal: TOTAL_NORMAL, normalFixes: 0,
     sev1Unlocked: false, printerDefeated: false,
+    projects: PROJECTS.map(p => ({...p, status:"pending", tested:false})), risks: [], nextRiskId:1,
+    incidentsReported:0, incidentsResolved:0, incidentsMissed:0, incidentsPrevented:0, projectsCompleted:0, projectPoints:0,
     bossStatus: Object.fromEntries(BOSSES.map(boss => [boss.id, 'pending'])),
     queue: [], returns: [], nextId: 1,
     selected: null, work: null, phase: 0, status: 'playing', events: [] };
-  progressShift(game);
+  addTicket(game);
+  scheduleArrival(game);
   emit(game, 'narrator', { text: 'Welcome to the Incident Theatre. Read at your own pace, then acknowledge your first Sev 3 ticket to start its 15-minute SLA.' });
   return game;
 }
@@ -66,7 +78,9 @@ function repairSelection(g) {
 function settleTicket(g, ticket, resolution) {
   if (ticket.resolution) return;
   ticket.resolution = resolution;
-  if (ticket.boss) {
+  if (ticket.incident) {
+    if (resolution === 'fix') g.incidentsResolved++; else g.incidentsMissed++;
+  } else if (ticket.boss) {
     g.bossStatus[ticket.bossId] = resolution === 'fix' ? 'defeated' : 'missed';
     if (ticket.bossId === BOSSES[0].id && resolution === 'fix') g.printerDefeated = true;
   } else {
@@ -86,10 +100,10 @@ function missTicket(g, ticket) {
 }
 function reportTicket(g, source, severity, extra = {}) {
   const id = g.nextId++, slaSeconds = SLA_SECONDS[severity];
-  const ticket = { id, rootId: id, source, severity, slaSeconds, urgent: severity === 1,
+  const ticket = { id, rootId: id, source, severity, slaSeconds, urgent: severity <= 2,
     acknowledged: false, acknowledgedAt: null, reportedAt: g.time, arrival: g.time,
-    deadline: severity === 1 ? tickTime(g.time + slaSeconds) : null, patience: slaSeconds,
-    reopened: false, patchUsed: false, resolution: null, ...extra,
+    deadline: severity <= 2 ? tickTime(g.time + slaSeconds) : null, patience: slaSeconds,
+    reopened: false, patchUsed: false, resolution: null, evidence: [], inquiryCount:0, mistakes:0, ...extra,
     actions: actionsFor(source, g.random) };
   g.queue.push(ticket); repairSelection(g);
   return ticket;
@@ -97,7 +111,7 @@ function reportTicket(g, source, severity, extra = {}) {
 function addTicket(g) {
   if (g.reportedNormal >= g.totalNormal) return;
   const source = g.deck[g.cursor++];
-  const ticket = reportTicket(g, source, g.sev1Unlocked ? 1 : 3);
+  const ticket = reportTicket(g, source, 3);
   g.reportedNormal++;
   emit(g, 'arrival', { id: ticket.id, severity: ticket.severity, text: source.title });
 }
@@ -109,7 +123,7 @@ function returnTicket(g, returning) {
     text: `${ticket.source.title} returns for its encore. The original SLA is still running; this issue now needs a lasting fix.` });
 }
 function addBoss(g, boss) {
-  const severity = boss.id === BOSSES[0].id ? 3 : g.sev1Unlocked ? 1 : 3;
+  const severity = 3;
   const ticket = reportTicket(g, boss.stages[0], severity, {
     boss: true, bossId: boss.id, stage: 1, stageCount: boss.stages.length,
     techSkill: boss.techSkill, bluffed: false,
@@ -118,25 +132,51 @@ function addBoss(g, boss) {
   emit(g, 'boss-arrival', { id: ticket.id, bossId: boss.id, severity, techSkill: boss.techSkill,
     title: boss.title, text: boss.entrance });
 }
-/** Reports the next authored issue only when the previous issue is finally settled. */
+function eligibleBoss(g) {
+  return BOSSES.find(b => g.bossStatus[b.id] === 'pending' && g.completedNormal >= b.afterNormal);
+}
+function hasUnreportedIssues(g) {
+  return g.reportedNormal < g.totalNormal || Object.values(g.bossStatus).some(s => s === 'pending');
+}
+function scheduleArrival(g) {
+  g.nextArrival = hasUnreportedIssues(g)
+    ? tickTime(g.time + ARRIVAL_SECONDS.min + Math.floor(g.arrivalRandom() * (ARRIVAL_SECONDS.max - ARRIVAL_SECONDS.min + 1)))
+    : null;
+}
+/** A scheduled report may overlap any open issue; eligible bosses get the next slot. */
+function reportNext(g) {
+  const boss = eligibleBoss(g);
+  if (boss) {
+    if (boss.id === BOSSES[0].id) {
+      g.phase = Math.max(g.phase, 1);
+      emit(g, 'phase', { phase: 1, text: 'ACT II: THE PRINTER TAKES THE STAGE · STILL SEV 3' });
+    }
+    addBoss(g, boss);
+  } else if (g.reportedNormal < g.totalNormal) addTicket(g);
+  else {
+    // The finite normal deck is exhausted. Park the clock until a completion
+    // makes a pending boss eligible, rather than revisiting a stale boundary.
+    g.nextArrival = null;
+    return;
+  }
+  scheduleArrival(g);
+}
+/** Completion unlocks severity and eligibility, never an immediate report. */
 function progressShift(g) {
   if (g.status !== 'playing') return;
   if (g.morale <= 0) { endGame(g); return; }
   if (!g.sev1Unlocked && g.normalFixes >= 8 && g.printerDefeated) {
     g.sev1Unlocked = true; g.phase = 2;
-    emit(g, 'sev1-unlocked', { text: 'Sev 1 unlocked: eight lasting fixes and the printer defeated. New urgent incidents have a one-minute SLA starting the instant they are reported.' });
-    emit(g, 'phase', { phase: 2, text: 'ACT III: SEV 1 INCIDENTS · THE CLOCK STARTS AT REPORT' });
+    emit(g, 'sev1-unlocked', { text: 'Sev 1 responsibility unlocked. Prevent unsafe changes: after your first Sev 2, a later neglected risk can cause a 60-second Sev 1. Good work can prevent both.' });
+    emit(g, 'phase', { phase: 2, text: 'ACT III: PREVENT THE NEXT INCIDENT' });
   }
-  if (g.queue.length || g.returns.length || g.work) return;
-  const boss = BOSSES.find(b => g.bossStatus[b.id] === 'pending' && g.completedNormal >= b.afterNormal);
-  if (boss) {
-    if (boss.id === BOSSES[0].id) {
-      g.phase = 1;
-      emit(g, 'phase', { phase: 1, text: 'ACT II: THE PRINTER TAKES THE STAGE · STILL SEV 3' });
-    }
-    addBoss(g, boss);
-  } else if (g.reportedNormal < g.totalNormal) addTicket(g);
-  else if (g.completedNormal === g.totalNormal && Object.values(g.bossStatus).every(s => s === 'defeated' || s === 'missed')) endGame(g);
+  if (!g.queue.length && !g.returns.length && !g.work && g.completedNormal === g.totalNormal &&
+      Object.values(g.bossStatus).every(s => s === 'defeated' || s === 'missed') &&
+      !g.risks.some(r=>r.status==='pending') && g.projects.every(p=>['completed','deferred'].includes(p.status))) {
+    endGame(g);
+    return;
+  }
+  if (g.nextArrival === null && (g.reportedNormal < g.totalNormal || eligibleBoss(g))) scheduleArrival(g);
 }
 /** Acknowledgement starts a Sev 3 SLA once; Sev 1 clocks already started at report. */
 export function acknowledgeTicket(g, id) {
@@ -146,12 +186,26 @@ export function acknowledgeTicket(g, id) {
   ticket.acknowledged = true; ticket.acknowledgedAt = g.time;
   if (ticket.deadline === null) ticket.deadline = tickTime(g.time + ticket.slaSeconds);
   emit(g, 'acknowledged', { id, severity: ticket.severity, deadline: ticket.deadline,
-    text: ticket.severity === 3 ? 'Acknowledged. Your 15-minute SLA starts now.' : 'Acknowledged. The Sev 1 SLA has been running since this incident was reported.' });
+    text: ticket.severity === 3 ? 'Acknowledged. Your 15-minute SLA starts now.' : `Acknowledged. The Sev ${ticket.severity} SLA has been running since this incident was reported.` });
   return true;
 }
 export function selectTicket(g, id) {
   if (g.status !== 'playing' || !g.queue.some(t => t.id === id)) return false;
   g.selected = id; return true;
+}
+/** Questions and diagnostics reveal authored evidence, without changing the solution or score. */
+export function investigateTicket(g, id, expectedTicketId = g.selected, expectedStage = undefined) {
+  if (g.status !== 'playing' || g.work || g.selected !== expectedTicketId) return false;
+  const ticket = g.queue.find(t => t.id === g.selected);
+  if (!ticket || !ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON) ||
+      (expectedStage !== undefined && ticket.stage !== expectedStage)) return false;
+  const investigation = ticket.source.investigations?.find(item => item.id === id);
+  if (!investigation || !Object.hasOwn(INVESTIGATIONS, investigation.kind) || ticket.evidence.some(item => item.id === id)) return false;
+  g.work = { type: 'investigation', ticketId: ticket.id, stage: ticket.stage,
+    action: { kind: investigation.kind, label: investigation.label }, investigation: { ...investigation },
+    started: g.time, ends: tickTime(g.time + INVESTIGATIONS[investigation.kind].seconds) };
+  emit(g, 'work', { kind: investigation.kind, ticketId: ticket.id, investigationId: id });
+  return true;
 }
 /** Optional expectedStage protects clicks rendered for an earlier boss stage. */
 export function takeAction(g, index, expectedTicketId = g.selected, expectedStage = undefined) {
@@ -161,7 +215,7 @@ export function takeAction(g, index, expectedTicketId = g.selected, expectedStag
       (expectedStage !== undefined && ticket.stage !== expectedStage)) return false;
   let action;
   if (index === 'assist') {
-    if (ticket.boss || g.assists <= 0) return false;
+    if (ticket.boss || ticket.incident || g.assists <= 0) return false;
     action = { kind: 'assist', label: 'Ask a teammate', outcome: 'Your teammate takes a bow. You inherit a coffee debt.' };
   } else if (index === 'bluff') {
     if (g.classId !== 'faker' || !ticket.boss || ticket.bluffed) return false;
@@ -174,6 +228,61 @@ export function takeAction(g, index, expectedTicketId = g.selected, expectedStag
   emit(g, 'work', { kind: action.kind });
   return true;
 }
+
+function addRisk(g, details) {
+  const risk = { ...details, id:g.nextRiskId++, due:tickTime(g.time+60), status:'pending' };
+  g.risks.push(risk);
+  emit(g,'risk',{text:`Risk created: ${risk.cause} You have 60 seconds to correct it before a major incident.`,riskId:risk.id});
+  return risk;
+}
+function preventRisk(g,risk) {
+  if(risk.status!=='pending') return;
+  risk.status='prevented'; g.incidentsPrevented++; g.score+=400; g.projectPoints+=400;
+  emit(g,'prevented',{text:`Incident prevented: ${risk.service}. +400 points. The boring ending is the best ending.`});
+}
+function escalateRisk(g,risk) {
+  risk.status='incident';
+  const severity=g.incidentsReported>0 && g.sev1Unlocked ? 1 : 2;
+  const ticket=reportTicket(g,incidentSource(risk,severity),severity,{incident:true,riskId:risk.id,cause:risk.cause});
+  g.incidentsReported++; g.selected=ticket.id;
+  const project=g.projects.find(p=>p.id===risk.projectId);
+  if(project) project.status='completed';
+  emit(g,'incident',{text:`SEV ${severity}: ${ticket.source.title}. Cause: ${risk.cause} ${ticket.slaSeconds} seconds from report.`,id:ticket.id});
+}
+/** Projects share the same worker as tickets. No background free progress. */
+export function startProject(g,id,action) {
+  if(g.status!=='playing'||g.work) return false;
+  const project=g.projects.find(p=>p.id===id);
+  if(!project || g.completedNormal<project.unlockAfter || ['completed','deferred'].includes(project.status)) return false;
+  const risk=g.risks.find(r=>r.projectId===id&&r.status==='pending');
+  if(action==='defer') {
+    if(risk || project.status==='released') return false;
+    project.status='deferred'; emit(g,'project',{text:`${project.title} deferred safely. No release, no new risk, no project reward.`}); progressShift(g); return true;
+  }
+  if(!Object.hasOwn(PROJECT_ACTIONS,action)) return false;
+  if(action==='remediate' ? !risk : project.status!=='pending') return false;
+  if(action==='test' && project.tested || action==='release' && !project.tested || action==='unsafeRelease' && project.tested) return false;
+  g.work={type:'project',projectId:id,projectAction:action,action:{kind:'project',label:project.title},started:g.time,ends:tickTime(g.time+PROJECT_ACTIONS[action])};
+  return true;
+}
+export function cancelWork(g) {
+  if(g.status!=='playing'||g.work?.type!=='project') return false;
+  g.work=null; emit(g,'project',{text:'Project step interrupted. Its unfinished test or release must be restarted; ticket clocks kept running.'}); return true;
+}
+function completeProject(g,work) {
+  const project=g.projects.find(p=>p.id===work.projectId);
+  const action=work.projectAction;
+  if(action==='test') {project.tested=true; emit(g,'project',{text:`${project.title}: ${project.finding} Ready for a verified release.`});}
+  else if(action==='unsafeRelease') {
+    project.status='released';
+    addRisk(g,{projectId:project.id,service:project.service,incidentTitle:project.incidentTitle,cause:`${project.title} was released without a compatibility test.`});
+  } else if(action==='remediate') {
+    const risk=g.risks.find(r=>r.projectId===project.id&&r.status==='pending');
+    if(risk) {preventRisk(g,risk);project.status='completed';g.projectsCompleted++;}
+    else emit(g,'project',{text:'The incident was reported before the preventative test finished. Resolve it in the ticket queue.'});
+  } else {project.status='completed';g.projectsCompleted++;g.score+=450;g.projectPoints+=450;emit(g,'project',{text:`${project.title} shipped safely. +450 points. Testing kept the department working.`});}
+}
+
 function completeBluff(g, ticket) {
   const success = ticket.techSkill < 5;
   let points = 0;
@@ -190,24 +299,39 @@ function completeWork(g) {
   const work = g.work;
   if (!work) return;
   g.work = null;
+  if (work.type === 'project') { completeProject(g, work); return; }
   const ticket = g.queue.find(t => t.id === work.ticketId);
-  if (!ticket) return;
+  if (!ticket || ticket.stage !== work.stage) return;
+  if (work.type === 'investigation') {
+    const { id, kind, label, reply, evidence } = work.investigation;
+    const finding = { id, kind, label, reply, evidence };
+    if (!ticket.evidence.some(item => item.id === id)) {
+      ticket.evidence.push(finding); ticket.inquiryCount++;
+      emit(g, 'investigation', { ticketId: ticket.id, stage: ticket.stage, ...finding, text: reply });
+    }
+    return;
+  }
   const kind = work.action.kind;
   if (kind === 'bluff') { completeBluff(g, ticket); return; }
   const completedStage = ticket.stage, completedTitle = ticket.source.title;
   let points = 0, defeated = false, closed = false;
   if (kind === 'wrong') {
-    g.wrong++; g.streak = 0; g.morale = Math.max(0, g.morale - 10);
+    g.wrong++; ticket.mistakes++; g.streak = 0; g.morale = Math.max(0, g.morale - 10);
     ticket.actions = ticket.actions.map(a => a === work.action ? { ...a, tried: true } : a);
+    if (work.action.risk) addRisk(g, {...work.action.risk, cause:`Ticket #${ticket.id}: ${work.action.label}. ${work.action.risk.cause}`, sourceTicketId:ticket.id});
   } else if (kind === 'fix') {
     g.streak++; g.bestStreak = Math.max(g.bestStreak, g.streak);
     points = ACTIONS.fix.points + CLASSES[g.classId].fixBonus + Math.min(5, g.streak - 1) * 25 + (ticket.urgent && !ticket.boss ? 50 : 0);
-    g.morale = Math.min(100, g.morale + 4);
+    g.morale = Math.min(100, g.morale + (ticket.incident ? 10 : 4));
+    if (ticket.incident) points = ticket.severity === 2 ? 200 : 300;
+    else if (!ticket.inquiryCount && !ticket.mistakes && !ticket.patchUsed) points += 25;
+    // Correcting the offending case before its risk matures prevents the major incident.
+    for (const risk of g.risks.filter(r=>r.status==='pending' && r.sourceTicketId===ticket.id)) preventRisk(g,risk);
     if (ticket.boss) {
       g.bossStagesCleared++;
       const boss = BOSSES.find(b => b.id === ticket.bossId);
       if (ticket.stage < boss.stages.length) {
-        ticket.stage++; ticket.source = boss.stages[ticket.stage - 1]; ticket.actions = actionsFor(ticket.source, g.random);
+        ticket.stage++; ticket.source = boss.stages[ticket.stage - 1]; ticket.actions = actionsFor(ticket.source, g.random); ticket.evidence = [];
         emit(g, 'boss-stage', { id: ticket.id, bossId: ticket.bossId, stage: ticket.stage, stageCount: ticket.stageCount,
           text: 'One fault down. The second act begins. Read the new evidence before you make your move.' });
       } else {
@@ -233,10 +357,10 @@ function completeWork(g) {
   }
   g.score += points; repairSelection(g);
   emit(g, 'outcome', { kind, points, text: work.action.outcome, title: completedTitle, streak: g.streak,
-    boss: !!ticket.boss, stage: completedStage, defeated, closed });
+    boss: !!ticket.boss, incident:!!ticket.incident, expert:kind==='fix'&&!ticket.incident&&!ticket.inquiryCount&&!ticket.mistakes&&!ticket.patchUsed, stage: completedStage, defeated, closed });
   if (kind === 'fix') {
-    if (closed) award(g, 'firstfix');
-    if (g.streak >= 3) award(g, 'threestreak');
+    if (closed && !ticket.incident) award(g, 'firstfix');
+    if (g.streak >= 3 && !ticket.incident) award(g, 'threestreak');
     if (defeated) award(g, 'firstboss');
   }
 }
@@ -252,11 +376,11 @@ function expireTickets(g) {
 }
 function endGame(g) {
   if (g.status === 'finished') return;
-  g.status = 'finished'; g.work = null;
+  g.status = 'finished'; g.work = null; g.nextArrival = null;
   g.completion = g.morale <= 0 ? 'morale' : g.sev1Unlocked ? 'career' : 'practice';
   g.bonus = g.morale > 0 ? Math.round(g.morale * 3) : 0; g.score += g.bonus;
   if (g.completedNormal === g.totalNormal && g.bossesDefeated === BOSSES.length &&
-      g.morale > 0 && g.missed === 0 && g.wrong === 0) award(g, 'perfectsurvival');
+      g.morale > 0 && g.missed === 0 && g.wrong === 0 && g.incidentsReported === 0) award(g, 'perfectsurvival');
   emit(g, 'end', { completion: g.completion });
 }
 /** Event-boundary stepping keeps results independent of frame rate. Pausing freezes all clocks. */
@@ -267,7 +391,7 @@ export function advance(g, seconds) {
   while (g.time < target - EPSILON && g.status === 'playing') {
     const deadlines = [...g.queue, ...g.returns.map(r => r.ticket)]
       .filter(t => t.deadline !== null).map(t => t.deadline);
-    const boundary = Math.min(target, g.work?.ends ?? Infinity, ...g.returns.map(r => r.at), ...deadlines);
+    const boundary = Math.min(target, g.nextArrival ?? Infinity, g.work?.ends ?? Infinity, ...g.returns.map(r => r.at), ...g.risks.filter(r=>r.status==='pending').map(r=>r.due), ...deadlines);
     g.time = Math.max(g.time, boundary);
     // Work completed exactly on the deadline succeeds; work still in progress expires.
     if (g.work && g.work.ends <= g.time + EPSILON) completeWork(g);
@@ -276,8 +400,16 @@ export function advance(g, seconds) {
     const due = g.returns.filter(r => r.at <= g.time + EPSILON);
     g.returns = g.returns.filter(r => r.at > g.time + EPSILON);
     due.forEach(r => returnTicket(g, r));
+    for (const risk of g.risks.filter(r=>r.status==='pending' && r.due <= g.time + EPSILON)) escalateRisk(g,risk);
     progressShift(g);
+    if (g.status === 'playing' && g.nextArrival !== null && g.nextArrival <= g.time + EPSILON) reportNext(g);
   }
+}
+/** Skip only genuinely idle time; never jump over reading, work, or a patched issue's return. */
+export function skipIdle(g) {
+  if (g.status !== 'playing' || g.queue.length || g.returns.length || g.work || g.risks.some(r=>r.status==='pending') || !Number.isFinite(g.nextArrival) || g.nextArrival <= g.time) return false;
+  advance(g, g.nextArrival - g.time);
+  return true;
 }
 export function drainEvents(g) { return g.events.splice(0); }
 export function getRank(g) {
