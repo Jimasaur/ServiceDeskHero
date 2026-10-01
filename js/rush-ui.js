@@ -87,6 +87,7 @@ function handleEvents() {
     } else if (event.type === 'sev1-unlocked') {
       toast(event.text); addFeed(event.text); announce(event.text);
     } else if (event.type === 'acknowledged') {
+      const seen=game.queue.find(t=>t.id===event.id);if(seen)unread[stream(seen)]?.delete(seen.id);
       announce(event.text || 'Ticket acknowledged. SLA active.');
     } else if (event.type === 'phase') {
       toast(event.text); addFeed(event.text); beep('phase');
@@ -250,7 +251,7 @@ function renderProjects(){
 }
 function openCase(id){const t=game.queue.find(t=>t.id===id);if(!t)return;activeDeskTab=stream(t);lifecycleFilter=t.held?'hold':'active';tabSelection[activeDeskTab]=id;unread[activeDeskTab].delete(id);selectTicket(game,id);lastQueueKey='';render();}
 function act(index, expected = game?.selected, stage = undefined) {
-  if (game && ['inc','req'].includes(activeDeskTab) && lifecycleFilter!=='resolved' && takeAction(game,index,expected,stage)) { beep('click'); render(); }
+  if (game && ['inc','req'].includes(activeDeskTab) && lifecycleFilter!=='resolved' && takeAction(game,index,expected,stage)) { unread[activeDeskTab]?.delete(expected); beep('click'); render(); }
 }
 function pause() {
   if (!game || game.status !== 'playing') return;
