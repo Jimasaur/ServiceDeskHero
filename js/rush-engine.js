@@ -58,7 +58,7 @@ export function createGame(seed = 'practice', relaxed = false, classId = 'engine
     projects: PROJECTS.map(p => ({...p, status:"pending", tested:false})), risks: [], nextRiskId:1,
     incidentsReported:0, incidentsResolved:0, incidentsMissed:0, incidentsPrevented:0, projectsCompleted:0, projectPoints:0,
     bossStatus: Object.fromEntries(BOSSES.map(boss => [boss.id, 'pending'])),
-    queue: [], returns: [], nextId: 1,
+    queue: [], returns: [], history: [], nextId: 1,
     selected: null, work: null, phase: 0, status: 'playing', events: [] };
   addTicket(game);
   scheduleArrival(game);
@@ -78,6 +78,8 @@ function repairSelection(g) {
 function settleTicket(g, ticket, resolution) {
   if (ticket.resolution) return;
   ticket.resolution = resolution;
+  ticket.closedAt=g.time;
+  g.history.push({...ticket,actions:ticket.actions.map(a=>({...a})),evidence:ticket.evidence.map(e=>({...e}))});
   if (ticket.incident) {
     if (resolution === 'fix') g.incidentsResolved++; else g.incidentsMissed++;
   } else if (ticket.boss) {
@@ -103,7 +105,7 @@ function reportTicket(g, source, severity, extra = {}) {
   const ticket = { id, rootId: id, source, severity, slaSeconds, urgent: severity <= 2,
     acknowledged: false, acknowledgedAt: null, reportedAt: g.time, arrival: g.time,
     deadline: severity <= 2 ? tickTime(g.time + slaSeconds) : null, patience: slaSeconds,
-    reopened: false, patchUsed: false, resolution: null, evidence: [], inquiryCount:0, mistakes:0, ...extra,
+    held:false, workstream:source.workstream || 'inc', reopened: false, patchUsed: false, resolution: null, evidence: [], inquiryCount:0, mistakes:0, ...extra,
     actions: actionsFor(source, g.random) };
   g.queue.push(ticket); repairSelection(g);
   return ticket;
@@ -182,12 +184,27 @@ function progressShift(g) {
 export function acknowledgeTicket(g, id) {
   if (g.status !== 'playing') return false;
   const ticket = g.queue.find(t => t.id === id);
-  if (!ticket || ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON)) return false;
+  if (!ticket || ticket.held || ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON)) return false;
   ticket.acknowledged = true; ticket.acknowledgedAt = g.time;
   if (ticket.deadline === null) ticket.deadline = tickTime(g.time + ticket.slaSeconds);
   emit(g, 'acknowledged', { id, severity: ticket.severity, deadline: ticket.deadline,
     text: ticket.severity === 3 ? 'Acknowledged. Your 15-minute SLA starts now.' : `Acknowledged. The Sev ${ticket.severity} SLA has been running since this incident was reported.` });
   return true;
+}
+/** Hold is a workflow label, never a clock pause. Only Pause freezes the simulation. */
+export function setTicketHeld(g,id,held) {
+  if(g.status!=='playing'||typeof held!=='boolean') return false;
+  const ticket=g.queue.find(t=>t.id===id);
+  if(!ticket||ticket.held===held||g.work?.ticketId===id) return false;
+  ticket.held=held;
+  emit(g,'held',{id,held,text:held?'On hold. Any running SLA continues; resume this case to work on it.':'Case resumed. Its original SLA is unchanged.'});
+  return true;
+}
+export function setProjectHeld(g,id,held) {
+  if(g.status!=='playing'||typeof held!=='boolean') return false;
+  const project=g.projects.find(p=>p.id===id);
+  if(!project||project.status!=='pending'||!!project.held===held||g.work?.projectId===id||g.completedNormal<project.unlockAfter) return false;
+  project.held=held;emit(g,'project',{text:held?`${project.title} on hold. No release occurred.`:`${project.title} resumed.`});return true;
 }
 export function selectTicket(g, id) {
   if (g.status !== 'playing' || !g.queue.some(t => t.id === id)) return false;
@@ -197,7 +214,7 @@ export function selectTicket(g, id) {
 export function investigateTicket(g, id, expectedTicketId = g.selected, expectedStage = undefined) {
   if (g.status !== 'playing' || g.work || g.selected !== expectedTicketId) return false;
   const ticket = g.queue.find(t => t.id === g.selected);
-  if (!ticket || !ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON) ||
+  if (!ticket || ticket.held || !ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON) ||
       (expectedStage !== undefined && ticket.stage !== expectedStage)) return false;
   const investigation = ticket.source.investigations?.find(item => item.id === id);
   if (!investigation || !Object.hasOwn(INVESTIGATIONS, investigation.kind) || ticket.evidence.some(item => item.id === id)) return false;
@@ -211,7 +228,7 @@ export function investigateTicket(g, id, expectedTicketId = g.selected, expected
 export function takeAction(g, index, expectedTicketId = g.selected, expectedStage = undefined) {
   if (g.status !== 'playing' || g.work || g.selected !== expectedTicketId) return false;
   const ticket = g.queue.find(t => t.id === g.selected);
-  if (!ticket || !ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON) ||
+  if (!ticket || ticket.held || !ticket.acknowledged || (ticket.deadline !== null && ticket.deadline <= g.time + EPSILON) ||
       (expectedStage !== undefined && ticket.stage !== expectedStage)) return false;
   let action;
   if (index === 'assist') {
@@ -253,7 +270,7 @@ function escalateRisk(g,risk) {
 export function startProject(g,id,action) {
   if(g.status!=='playing'||g.work) return false;
   const project=g.projects.find(p=>p.id===id);
-  if(!project || g.completedNormal<project.unlockAfter || ['completed','deferred'].includes(project.status)) return false;
+  if(!project || project.held || g.completedNormal<project.unlockAfter || ['completed','deferred'].includes(project.status)) return false;
   const risk=g.risks.find(r=>r.projectId===id&&r.status==='pending');
   if(action==='defer') {
     if(risk || project.status==='released') return false;

@@ -15,6 +15,10 @@ Testing and project work share your one worker with tickets. Compatibility test:
 
 Workarounds reopen after 11 seconds with their original SLA; boss stages also share one deadline. A successful bluff explicitly adds ten seconds. All timers freeze on pause/background. Pending risks and outstanding project decisions keep the shift open. Major incidents do not count toward routine-case progression. Prevention is worth more than deliberately causing incidents.
 
+## Compact desk
+
+The active shift fits the viewport with a pinned HUD, five workstream tabs, and contained case-list/detail scrolling. INC contains incidents and bosses; REQ groups the three existing settings requests. Projects holds change work, KTLO exposes active prevention tasks and their history, and Training is a playable field guide. Active/Hold/Resolved filters organize tickets and projects. **Hold never pauses or resets a running SLA**; use the global Pause control to freeze the game. Closed history retains evidence and clearly labels missed deadlines. New reports pulse their tab briefly and leave a numeric new-item badge; reduced-motion users receive the badge without animation. Tabs and Q/E shortcuts stay scoped to the visible list.
+
 The scenarios and characters are fiction, simplified for gameplay. This is not a real service desk or a production troubleshooting runbook.
 
 ## Run locally

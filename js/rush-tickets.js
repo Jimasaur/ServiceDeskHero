@@ -186,7 +186,7 @@ export const TICKETS = [
     ],
   },
   {
-    id: 'accidental-browser-zoom',
+    id: 'accidental-browser-zoom', workstream:'req',
     category: 'BROWSER',
     title: 'Website for giants',
     quote: "The website redesigned itself for a lighthouse. I did touch some keys, but surely that is unrelated.",
@@ -256,7 +256,7 @@ export const TICKETS = [
     ],
   },
   {
-    id: 'four-pages-per-sheet',
+    id: 'four-pages-per-sheet', workstream:'req',
     category: 'PRINTING',
     title: 'Report for ants',
     quote: "The printer shrank the report. We ordered handouts, not a secret message for ants.",
@@ -361,7 +361,7 @@ export const TICKETS = [
     ],
   },
   {
-    id: 'surprise-jazz',
+    id: 'surprise-jazz', workstream:'req',
     category: 'BROWSER',
     title: 'Mandatory surprise jazz',
     quote: "Someone installed a saxophone in my laptop. Please stop the lesson before it learns without me.",
