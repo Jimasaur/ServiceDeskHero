@@ -2,6 +2,11 @@ name: Game playtest
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+concurrency:
+  group: game-playtest-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

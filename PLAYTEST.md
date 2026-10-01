@@ -2,6 +2,10 @@
 
 This release is a development playtest, not a marketing launch. No advertising, analytics, payment flow, new backend, or account/security changes are included.
 
+## Publishing is explicit
+
+GitHub validates pull requests and main automatically. Code merges do not publish. The S3/CloudFront workflow is manual-only; an authenticated AWS connection can publish an explicitly approved tested build instead. Keep deployment credentials and authentication separate from code changes.
+
 ## Before release
 
 - Pass `npm run check` and `npm test`
@@ -20,7 +24,7 @@ This release is a development playtest, not a marketing launch. No advertising, 
 
 ## Rollback
 
-The pre-Rush main baseline is `f01fdfa90a0d1fb10e740b6f9a96d0aa985b905b` (tree `728ed675516c52b37b0a6a4efdaddc5e4dfd8e24`). Revert the gameplay merge with a new reviewed commit and allow the existing main deployment to publish it. Do not force-push main. The old version already uses `sdh_save_v2`, so the same saved careers remain compatible. Rush uses a separate key and can safely remain in storage.
+The pre-Rush main baseline is `f01fdfa90a0d1fb10e740b6f9a96d0aa985b905b` (tree `728ed675516c52b37b0a6a4efdaddc5e4dfd8e24`). Revert the gameplay merge with a new reviewed commit and explicitly publish the tested revert. Do not force-push main. The old version already uses `sdh_save_v2`, so the same saved careers remain compatible. Rush uses a separate key and can safely remain in storage.
 
 ## Known playtest boundaries
 
