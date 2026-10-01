@@ -1,7 +1,7 @@
 {
   "name": "Service Desk Hero",
   "short_name": "SDH",
-  "description": "Survive Rush Hour: technical tickets, boss battles and a delightfully unhelpful AI. Or build your team in Career mode.",
+  "description": "Read, acknowledge, and troubleshoot IT tickets at your own pace. Earn your way from generous Sev 3 SLAs to urgent Sev 1 incidents and technical bosses.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#060414",
