@@ -41,4 +41,4 @@ The legacy Career feedback form still targets the project's production feedback 
 
 ## Deployment
 
-Pushes to `main` run the existing S3/CloudFront deployment using existing repository configuration. Feature branches and draft PRs do not deploy. Both entry points get a build stamp. Review the playtest checks before merging; new game source does not need AWS account changes. See `PLAYTEST.md` for the release checklist and rollback baseline.
+Pull requests and pushes to `main` run the game checks automatically. **Merging code does not deploy it.** Publication is a separate, explicit action through the authorized AWS connection. A manual-only `workflow_dispatch` S3/CloudFront workflow is retained for maintainers who have configured valid repository deployment credentials; its checks must pass before any upload. Both entry points receive a build stamp when that workflow is used. See `PLAYTEST.md` for the release checklist and rollback baseline.
