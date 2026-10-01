@@ -144,7 +144,10 @@ function render() {
       $('active-ticket').innerHTML = `<div class="ticket-meta"><span class="pill ${ticket.urgent?'coral':'purple'}">${ticket.boss ? `SEV ${ticket.severity} BOSS · STAGE ${ticket.stage}/2` : ticket.reopened ? `SEV ${ticket.severity} · REOPENED` : `SEV ${ticket.severity} · ${ticket.acknowledged?'ACKNOWLEDGED':'AWAITING ACK'}`}</span><span>TICKET #${String(ticket.id).padStart(4,'0')}</span></div><div class="ticket-category"><span aria-hidden="true">${escape(ticket.source.icon)}</span>${escape(ticket.source.category)}</div><h2 id="ticket-title">${escape(ticket.source.title)}</h2><p class="user-quote">“${escape(ticket.source.quote)}”</p><span class="ticket-user">${escape(ticket.source.user)}</span><div class="clue"><span class="clue-label">DIAGNOSTIC CLUE</span><p>${escape(ticket.source.clue)}</p></div>`;
       $('actions').innerHTML = ticket.actions.map((a,i)=>`<button class="action-button" data-action="${i}" data-for-ticket="${ticket.id}" data-stage="${ticket.stage || 0}" ${a.tried?'disabled':''}><span class="action-number" aria-hidden="true">${i+1}</span><span class="action-label">${escape(a.label)}${a.tried ? (a.kind==='patch' ? ' · used' : ' · tried') : ''}</span><span class="action-duration">${ACTIONS[a.kind].seconds}s</span></button>`).join('');
       if (hadActionFocus) { if (ticket.acknowledged) $('actions').querySelector('button:not([disabled])')?.focus({preventScroll:true}); else $('acknowledge-button').focus({preventScroll:true}); }
-      announce(`${ticket.source.title}. ${ticket.source.clue}`);
+      const slaAnnouncement = ticket.severity === 1
+        ? `Sev 1. Your 60-second SLA started when reported. ${ticket.acknowledged ? 'Acknowledged; the deadline is unchanged.' : 'Acknowledge to respond; the clock is already running.'}`
+        : ticket.acknowledged ? 'Acknowledged. Your 15-minute SLA is active.' : 'Sev 3. Read at your own pace. Your 15-minute SLA starts only after acknowledgement.';
+      announce(`${slaAnnouncement} ${ticket.source.title}. ${ticket.source.clue}`);
     }
   }
   $('actions').querySelectorAll('button').forEach((button,i)=>{button.disabled = !ticket || !ticket.acknowledged || Boolean(game.work) || !!ticket?.actions[i]?.tried || game.status !== 'playing';});

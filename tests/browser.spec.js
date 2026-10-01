@@ -87,6 +87,7 @@ test('desktop finite shift: ACK, all twelve normal fixes, both bosses, earned Se
       await expect(page.locator('#time')).toHaveText('9 / 14');
       await expect(page.locator('#acknowledge-button')).toBeVisible();
       await expect(page.locator('#action-area')).toBeHidden();
+      await expect(page.locator('#announcer')).toContainText('Your 60-second SLA started when reported');
       const before = await slaSeconds(page); expect(before).toBe(60);
       await page.clock.runFor(20000);
       const waiting = await slaSeconds(page); expect(waiting).toBeGreaterThanOrEqual(39); expect(waiting).toBeLessThanOrEqual(40);
@@ -129,6 +130,7 @@ test('Sev 3 waits more than fifteen minutes; ACK starts its full clock and pause
   await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 14');
   await expect(page.locator('#morale-number')).toHaveText('100%'); await expect(page.locator('#sla-time')).toHaveText('Not started');
   await acknowledge(page); await expect(page.locator('#sla-time')).toHaveText('15:00');
+  await expect(page.locator('#announcer')).toContainText('Acknowledged. Your 15-minute SLA is active.');
   await page.clock.runFor(1100); expect(await slaSeconds(page)).toBe(899);
   await page.keyboard.press('a'); expect(await slaSeconds(page)).toBe(899);
   await page.locator('#pause-button').click();
