@@ -99,6 +99,7 @@ function start() {
 }
 function render() {
   if (!game || game.status === 'finished') return;
+  const focusedInquiry = document.activeElement?.dataset.inquiry;
   const progress = game.completedNormal + game.bossesDefeated + game.bossesMissed;
   $('time').textContent = `${progress} / ${TOTAL_NORMAL + 2}`;
   $('time-fill').style.width = `${100 * progress / (TOTAL_NORMAL + 2)}%`;
@@ -146,7 +147,6 @@ function render() {
   $('skip-idle-button').disabled = game.status !== 'playing' || !!game.queue.length || !!game.returns.length || !!game.work || game.nextArrival === null || game.risks.some(r=>r.status==='pending');
   if (key !== lastTicketKey) {
     const hadActionFocus = $('actions').contains(document.activeElement);
-    const focusedInquiry = document.activeElement?.dataset.inquiry;
     lastTicketKey = key;
     if (ticket) {
       $('active-ticket').innerHTML = `<div class="ticket-meta"><span class="pill ${ticket.urgent?'coral':'purple'}">${ticket.boss ? `SEV ${ticket.severity} BOSS · STAGE ${ticket.stage}/2` : ticket.reopened ? `SEV ${ticket.severity} · REOPENED` : `SEV ${ticket.severity} · ${ticket.acknowledged?'ACKNOWLEDGED':'AWAITING ACK'}`}</span><span>TICKET #${String(ticket.id).padStart(4,'0')}</span></div><div class="ticket-category"><span aria-hidden="true">${escape(ticket.source.icon)}</span>${escape(ticket.source.category)}</div><h2 id="ticket-title">${escape(ticket.source.title)}</h2><p class="user-quote">“${escape(ticket.source.quote)}”</p><span class="ticket-user">${escape(ticket.source.user)}</span><div class="clue"><span class="clue-label">REPORTED SYMPTOMS · UNVERIFIED</span><p>${escape(ticket.source.brief || ticket.source.quote)}</p></div>`;
@@ -169,6 +169,7 @@ function render() {
   }
   $('actions').querySelectorAll('button').forEach((button,i)=>{button.disabled = !ticket || !ticket.acknowledged || Boolean(game.work) || !!ticket?.actions[i]?.tried || game.status !== 'playing';});
   $('investigation-options').querySelectorAll('button').forEach(button=>{button.disabled = !ticket?.acknowledged || !!game.work || game.status !== 'playing' || !!ticket?.evidence?.some(e=>e.id===button.dataset.inquiry);});
+  if(focusedInquiry && $('investigation-options').querySelector(`[data-inquiry="${CSS.escape(focusedInquiry)}"]`)?.disabled) ($('investigation-options').querySelector('button:not(:disabled)') || $('contact-user-button')).focus({preventScroll:true});
   $('boss-status').hidden = !ticket?.boss;
   document.querySelector('.ticket-panel').classList.toggle('boss-active',Boolean(ticket?.boss));
   if (ticket?.boss) $('boss-status').innerHTML = `<span>TECH SKILL <b>${ticket.techSkill}/10</b></span><span>DIAGNOSIS <b>${ticket.stage}/2</b></span><span class="boss-health">${ticket.stage===1?'▰ ▰':'▱ ▰'}</span>`;
