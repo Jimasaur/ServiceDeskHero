@@ -224,7 +224,7 @@ test('ticket Hold keeps its SLA running; Resume and resolved history retain evid
   await page.locator(`#queue [data-ticket="${id}"]`).click();
   await expect(page.locator('#hold-button')).toContainText(/resume/i);
   await expect(page.locator('#ticket-title')).toHaveText(title);
-  await expect(page.locator('#case-notes')).toContainText(evidence);
+  await expect(page.locator('#case-notes .evidence-item')).toHaveText(evidence, {useInnerText:true});
   await page.clock.fastForward(60100);
   const held = await slaSeconds(page);
   expect(before - held).toBeGreaterThanOrEqual(60);
@@ -247,7 +247,7 @@ test('ticket Hold keeps its SLA running; Resume and resolved history retain evid
   await page.locator(`#queue [data-history-ticket="${id}"]`).click();
   await expect(page.locator('#ticket-title')).toHaveText(title);
   await expect(page.locator('#history-status')).toContainText(/resolved|fixed|closed/i);
-  await expect(page.locator('#case-notes')).toContainText(evidence);
+  await expect(page.locator('#case-notes .evidence-item')).toHaveText(evidence, {useInnerText:true});
   await expect(page.locator('#action-area')).toBeHidden();
   await expect(page.locator('#acknowledge-button')).toBeHidden();
   await expect(page.locator('#hold-button')).toBeHidden();
