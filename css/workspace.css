@@ -13,7 +13,7 @@ body.playing main{display:flex;flex:1;min-height:0;width:100%;overflow:hidden}bo
 .desk-tabs [aria-selected=true]{background:#d7fc70;color:#102009;border-color:#e6ffb2;box-shadow:0 0 0 1px #d7fc70}
 .desk-tabs [data-count]{font:700 11px var(--mono);padding:2px 5px;margin-left:5px;border-radius:4px;background:#07111f66;color:inherit}.desk-tabs [aria-selected=true] [data-count]{background:#2230151c}
 .desk-tabs [data-unread]{position:absolute;right:3px;top:-4px;min-width:18px;border:2px solid #091421;border-radius:10px;background:#ffc17d;color:#211105;padding:1px 4px;font:800 10px var(--mono)}
-@keyframes arrival-glow{0%,100%{box-shadow:0 0 0 0 #ffd49200}50%{box-shadow:0 0 0 3px #ffd492aa;background-color:#475777;color:#fff}}
+@keyframes arrival-glow{0%,100%{box-shadow:0 0 0 0 #ffd49200}50%{box-shadow:0 0 0 3px #ffd492aa}}
 .desk-tabs .new-arrival{animation:arrival-glow 1s ease-in-out 2}
 .desk-toolbar{flex:none;display:flex;align-items:center;gap:10px;min-height:40px;padding:0 0 7px;font-size:12px;white-space:nowrap}#desk-filters{display:flex;gap:5px}#desk-filters button{min-height:34px;min-width:64px;padding:6px 12px;border-radius:6px;border:1px solid #7186a3;background:#14253d;color:#e0ecfc;font-size:12px}#desk-filters [aria-pressed=true]{background:#b6dafe;color:#071a2f;border-color:#daecff;font-weight:750}#open-total{margin-left:auto;color:#d6e5f9}.desk-alert{background:#512b20;border:1px solid #ffc19e;border-radius:6px;color:#ffe2c9;padding:6px 10px;font-size:12px;min-height:34px}
 #desk-content{flex:1;min-height:0;min-width:0;overflow:hidden;position:relative}
@@ -43,3 +43,7 @@ body.playing main{display:flex;flex:1;min-height:0;width:100%;overflow:hidden}bo
 @media(forced-colors:active){.desk-tabs button,#desk-filters button,#game .queue-ticket,#game .action-button{border:1px solid ButtonText}.desk-tabs [aria-selected=true],#desk-filters [aria-pressed=true]{outline:2px solid Highlight}}
 
 #ticket-detail{scroll-padding-top:68px}#ticket-detail button,#ticket-detail summary{scroll-margin-top:68px}
+
+/* Pulse the outline only: text contrast must never dip during a notification. */
+.playing #achievement-banner{display:none}
+@media(max-height:520px) and (min-width:600px){body.playing .app-header{display:none}#game .shift-strip{position:absolute;top:10px;right:20px;z-index:5;min-height:0;padding:0}#game .shift-strip>span{display:none}#game .hud{margin-top:6px;padding:7px 80px 7px 0}#game .hud strong{font-size:18px}#game .shift-strip #pause-button{min-height:30px}}
