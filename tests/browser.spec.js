@@ -154,7 +154,7 @@ test('390px Faker earns both bosses: high-tech catches a bluff; low-tech extends
       const score = Number((await page.locator('#score').innerText()).replaceAll(',', ''));
       const morale = Number((await page.locator('#morale-number').innerText()).replace('%', ''));
       await bluff.click(); await page.clock.runFor(900);
-      await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#boss-status')).toHaveText(stage);
+      await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#boss-status')).toHaveText(stage, {useInnerText:true});
       await expect(page.locator('#time')).toHaveText(progress); await expect(bluff).toBeDisabled();
       if (stage.includes('8/10')) {
         caught = true; expect(progress).toBe('4 / 14');
