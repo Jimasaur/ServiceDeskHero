@@ -11,6 +11,44 @@ async function boot(page) {
   await page.goto('/');
   await page.clock.pauseAt(new Date('2026-10-01T12:00:02Z'));
 }
+const ticketTabs = ['inc', 'req'];
+const deskTab = (page, tab) => page.locator(`[data-desk-tab="${tab}"]`);
+async function openDesk(page, tab, filter = 'active') {
+  if (await deskTab(page, tab).getAttribute('aria-selected') !== 'true') await deskTab(page, tab).click();
+  const status = page.locator(`[data-desk-filter="${filter}"]`);
+  if (tab !== 'training' && await status.getAttribute('aria-pressed') !== 'true') await status.click();
+}
+async function workspaceState(page) {
+  return {
+    tab: await page.locator('[data-desk-tab][aria-selected="true"]').getAttribute('data-desk-tab'),
+    filter: await page.locator('[data-desk-filter][aria-pressed="true"]').getAttribute('data-desk-filter'),
+    ticket: await page.locator('#ticket-detail').getAttribute('data-selected-ticket'),
+  };
+}
+async function restoreWorkspace(page, state) {
+  if (!(await page.locator('#game').isVisible())) return;
+  await openDesk(page, state.tab, state.filter || 'active');
+  if (state.ticket && await page.locator('#ticket-detail').getAttribute('data-selected-ticket') !== state.ticket && await page.locator(`#queue [data-ticket="${state.ticket}"]`).count()) {
+    await page.locator(`#queue [data-ticket="${state.ticket}"]`).click();
+  }
+}
+async function openCount(page) {
+  const text = await page.locator('#open-total').innerText();
+  expect(text).toMatch(/\d+/);
+  return Number(text.match(/\d+/)[0]);
+}
+async function expectOpenCount(page, count) {
+  await expect.poll(() => openCount(page)).toBe(count);
+}
+async function findOpenTicket(page) {
+  if (await page.locator('#ticket-title').isVisible() && await page.locator('#history-status').isHidden()) return true;
+  for (const tab of ticketTabs) {
+    await openDesk(page, tab);
+    const first = page.locator('#queue [data-ticket]').first();
+    if (await first.count()) { await first.click(); return true; }
+  }
+  return false;
+}
 const routineSources = [...TICKETS, ...BOSSES.flatMap(boss => boss.stages)];
 const projectIncidentSources = Engine.PROJECTS.map(project => incidentSource(project, 2));
 async function currentSource(page) {
@@ -37,27 +75,33 @@ async function fix(page) {
 }
 async function ready(page) {
   if (await page.locator('#results').isVisible()) return false;
-  if (await page.locator('#ticket-title').isVisible()) return true;
+  if (await findOpenTicket(page)) return true;
   const skip = page.locator('#skip-idle-button');
   if (await skip.isVisible() && await skip.isEnabled()) await skip.click();
   else {
     // Pending causal reports may outlive the finite routine deck. Never skip an open issue.
-    for (let seconds = 0; seconds < 121 && !(await page.locator('#ticket-title').isVisible()); seconds++) {
+    for (let seconds = 0; seconds < 121 && !(await findOpenTicket(page)); seconds++) {
       if (await page.locator('#results').isVisible()) return false;
       await page.clock.fastForward(1000);
     }
   }
+  await findOpenTicket(page);
   await expect(page.locator('#ticket-title')).toBeVisible();
   return true;
 }
 const projectButton = (page, id, action) => page.locator(`[data-project="${id}"][data-project-action="${action}"]`);
 async function doProject(page, id, action, milliseconds) {
+  const previous = await workspaceState(page);
+  await openDesk(page, action === 'remediate' ? 'ktlo' : 'projects');
   const button = projectButton(page, id, action);
   await expect(button).toBeVisible(); await expect(button).toBeEnabled();
   await button.click();
   if (milliseconds) await page.clock.fastForward(milliseconds);
+  await restoreWorkspace(page, previous);
 }
 async function completeAvailableProjects(page) {
+  const previous = await workspaceState(page);
+  await openDesk(page, 'projects');
   for (const project of Engine.PROJECTS) {
     const button = projectButton(page, project.id, 'test');
     if (await button.isVisible() && await button.isEnabled()) {
@@ -65,6 +109,7 @@ async function completeAvailableProjects(page) {
       await doProject(page, project.id, 'release', 6100);
     }
   }
+  await restoreWorkspace(page, previous);
 }
 async function finishSafe(page, inspect = async () => {}) {
   for (let step = 0; step < 24 && await page.locator('#game').isVisible(); step++) {
@@ -86,11 +131,15 @@ async function assertNoOverflow(page) {
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width);
 }
 async function selectSeverity(page, severity) {
+  await openDesk(page, 'inc');
   const card = page.locator('#queue button').filter({hasText: new RegExp(`SEV ${severity}`)});
   await expect(card).toHaveCount(1); await card.click();
 }
 async function assertNoIncidents(page) {
+  const previous = await workspaceState(page);
+  await openDesk(page, 'inc');
   await expect(page.locator('#queue button').filter({hasText: /SEV [12]/})).toHaveCount(0);
+  await restoreWorkspace(page, previous);
 }
 async function hidePage(page) {
   // Exercise the real listener deterministically in headless CI.
@@ -167,10 +216,10 @@ test('unacknowledged Sev3 can be read indefinitely while random routine arrivals
   await expect(page.locator('#sla-time')).toHaveText('Not started');
   await expect(page.locator('#action-area')).toBeHidden();
   await page.keyboard.press('1'); await page.keyboard.press('2'); await page.keyboard.press('3');
-  await page.clock.fastForward(29000); await expect(page.locator('#queue button')).toHaveCount(1);
-  await page.clock.fastForward(92000); expect(await page.locator('#queue button').count()).toBeGreaterThanOrEqual(2);
+  await page.clock.fastForward(29000); await expectOpenCount(page, 1);
+  await page.clock.fastForward(92000); expect(await openCount(page)).toBeGreaterThanOrEqual(2);
   await page.clock.fastForward(3600000);
-  await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#queue button')).toHaveCount(12);
+  await expect(page.locator('#ticket-title')).toHaveText(title); await expectOpenCount(page, 12);
   await expect(page.locator('#game')).toBeVisible(); await expect(page.locator('#results')).toBeHidden();
   await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 14');
   await expect(page.locator('#morale-number')).toHaveText('100%'); await expect(page.locator('#sla-time')).toHaveText('Not started');
@@ -203,15 +252,17 @@ test('an unhelpful optional question never blocks diagnostic evidence or a corre
   await expect(page.locator('#case-notes')).toContainText(question.evidence);
   await expect(page.locator(`[data-inquiry="${question.id}"]`)).toBeDisabled();
   await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 14');
-  await page.clock.fastForward(120000); expect(await page.locator('#queue button').count()).toBeGreaterThan(1);
+  await page.clock.fastForward(120000); expect(await openCount(page)).toBeGreaterThan(1);
   await page.locator('#diagnostics-button').click(); await page.locator(`[data-inquiry="${diagnostic.id}"]`).click();
-  await page.keyboard.press('e'); const otherTitle = await page.locator('#ticket-title').innerText();
+  await openDesk(page, 'req'); await page.locator('#queue [data-ticket]').first().click(); const otherTitle = await page.locator('#ticket-title').innerText();
   expect(otherTitle).not.toBe(source.title); await page.clock.fastForward(4100);
   await expect(page.locator('#case-notes')).not.toContainText(diagnostic.evidence);
-  await page.keyboard.press('q'); await expect(page.locator('#ticket-title')).toHaveText(source.title);
+  await openDesk(page, 'inc'); await page.locator('#queue [data-ticket]').filter({hasText:source.title}).click();
+  await expect(page.locator('#ticket-title')).toHaveText(source.title);
   await expect(page.locator('#case-notes')).toContainText(diagnostic.evidence);
   await expect(page.locator('#case-notes .evidence-item')).toHaveCount(2);
   await fix(page); await expect(page.locator('#resolved-label')).toHaveText('1 ticket closed');
+  await ready(page); await acknowledge(page);
   await expect(page.locator('#case-notes')).toContainText('No evidence collected');
   // Direct fixing remains possible without collecting any evidence on the next case.
   await fix(page); await expect(page.locator('#resolved-label')).toHaveText('2 tickets closed');
@@ -358,7 +409,7 @@ test('320px keyboard ACK, wrong response, single-patch return and duplicate acti
   await page.keyboard.press('p'); await expect(page.locator('#pause-dialog')).toBeVisible();
   await page.keyboard.press('Escape'); await expect(page.locator('#pause-dialog')).not.toBeVisible();
   const patch = await clickAction(page, 'patch'); await page.clock.fastForward(900);
-  await expect(page.locator('#empty-ticket')).toBeVisible(); await expect(page.locator('#queue button')).toHaveCount(0);
+  await expect(page.locator('#empty-ticket')).toBeVisible(); await expectOpenCount(page, 0);
   await expect(page.locator('#skip-idle-button')).toBeDisabled();
   await expect(page.locator('#time')).toHaveText('0 / 14'); await expect(page.locator('#resolved-label')).toHaveText('0 tickets closed');
   await page.clock.fastForward(11000); await expect(page.locator('#ticket-title')).toHaveText(title);
@@ -412,14 +463,14 @@ test('backgrounding freezes work, arrivals, SLA and returns; next-day replay ref
   const next = await page.locator('#next-arrival').innerText();
   await page.clock.fastForward(60000);
   await expect(page.locator('#sla-time')).toHaveText(sla); await expect(page.locator('#work-seconds')).toHaveText(work);
-  await expect(page.locator('#next-arrival')).toHaveText(next); await expect(page.locator('#queue button')).toHaveCount(1);
+  await expect(page.locator('#next-arrival')).toHaveText(next); await expectOpenCount(page, 1);
   await expect(page.locator('#time')).toHaveText('0 / 14');
   await revealPage(page); await page.clock.fastForward(2000); await expect(page.locator('#time')).toHaveText('1 / 14');
   await ready(page); await acknowledge(page); const title = await page.locator('#ticket-title').innerText();
   await clickAction(page, 'patch'); await page.clock.fastForward(900); await expect(page.locator('#empty-ticket')).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
   await expect(page.locator('#pause-dialog')).toBeVisible(); await page.clock.fastForward(60000);
-  await expect(page.locator('#queue button')).toHaveCount(0); await expect(page.locator('#time')).toHaveText('1 / 14');
+  await expectOpenCount(page, 0); await expect(page.locator('#time')).toHaveText('1 / 14');
   await page.locator('#resume-button').click(); await page.clock.fastForward(11000);
   await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#acknowledge-button')).toBeHidden();
   expect(await slaSeconds(page)).toBeGreaterThanOrEqual(888); expect(await slaSeconds(page)).toBeLessThanOrEqual(889);

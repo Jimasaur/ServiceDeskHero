@@ -1,4 +1,4 @@
-import { createGame, advance, takeAction, selectTicket, drainEvents, getRank, acknowledgeTicket, TOTAL_NORMAL, ACTIONS, INVESTIGATIONS, investigateTicket, skipIdle, startProject, cancelWork, PROJECT_ACTIONS } from './rush-engine.js';
+import { createGame, advance, takeAction, selectTicket, drainEvents, getRank, acknowledgeTicket, TOTAL_NORMAL, ACTIONS, INVESTIGATIONS, investigateTicket, skipIdle, startProject, cancelWork, PROJECT_ACTIONS, setTicketHeld, setProjectHeld } from './rush-engine.js';
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STORE = 'sdh_contact_v3';
@@ -8,6 +8,10 @@ let saved = {};
 try { const parsed = JSON.parse(localStorage.getItem(STORE) || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) saved = parsed; } catch { /* Storage is optional. */ }
 let relaxed = false, classId = 'engineer', game = null, previousTime = 0, lastTicketKey = '', lastQueueKey = '', toastTimer = 0, achievementTimer = 0;
 let interactionView = 'fix', lastCaseId = '';
+let activeDeskTab='inc', lifecycleFilter='active', tabSelection={}, unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()}, pulseUntil={};
+const stream=t=>t.workstream || t.source.workstream || 'inc';
+const closedProject=p=>['completed','deferred'].includes(p.status);
+const visibleCases=()=>['inc','req'].includes(activeDeskTab)?(lifecycleFilter==='resolved'?game.history:game.queue).filter(t=>stream(t)===activeDeskTab && (lifecycleFilter==='resolved'||!!t.held===(lifecycleFilter==='hold'))):[];
 let feed = [], audio = null, sound = saved.sound === true, resultRecorded = false, pointerActionTicket = null, pointerActionStage = undefined;
 const validBest = mode => Number.isFinite(saved[mode]) && saved[mode] >= 0 ? Math.floor(saved[mode]) : 0;
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* Play continues without persistence. */ } };
@@ -50,8 +54,14 @@ function addFeed(text, warning = false) {
 }
 function handleEvents() {
   for (const event of drainEvents(game)) {
+    if(['arrival','boss-arrival','incident','return'].includes(event.type)){const t=game.queue.find(t=>t.id===event.id);if(t)markNew(stream(t),t.id);}
+    if(event.type==='risk')markNew('ktlo',event.riskId);
+    if(event.type==='outcome' && game.completedNormal>=4 && !game.projects[1].notified){game.projects[1].notified=true;markNew('projects',game.projects[1].id);}
+    if(event.type==='held'){toast(event.text);addFeed(event.text);announce(event.text);}
     if (event.type === 'achievement') {
       const achievement = event.achievement || event;
+      const achievementText=`Achievement: ${achievement.title} · +${achievement.points}`;
+      toast(`${$('outcome').classList.contains('visible') ? $('outcome').textContent+' ' : ''}${achievementText}`);addFeed(achievementText);
       clearTimeout(achievementTimer); $('achievement-banner').hidden = false;
       $('achievement-banner').innerHTML = `<span>NEW ACHIEVEMENT · +${achievement.points || 0}</span><strong>${escape(achievement.title || '')}</strong><p>${escape(achievement.description || '')}</p>`;
       achievementTimer = setTimeout(() => $('achievement-banner').hidden = true,4500);
@@ -61,6 +71,7 @@ function handleEvents() {
       if (event.text) { toast(event.text, event.type === 'bluff' && event.success === false); addFeed(event.text, event.type === 'boss-arrival'); $('chuck-message').textContent = event.text; }
       if (event.type === 'boss-arrival') beep('wrong');
     } else if (event.type === 'investigation') {
+      $('evidence-drawer').open=true;
       const label = event.kind === 'question' ? 'User reply' : 'Diagnostic result';
       toast(`${label}: ${event.reply}`); addFeed(`${label} recorded for ticket #${event.ticketId}.`);
       announce(`${label}. ${event.reply}. ${event.evidence}`); beep('click');
@@ -76,6 +87,7 @@ function handleEvents() {
     } else if (event.type === 'sev1-unlocked') {
       toast(event.text); addFeed(event.text); announce(event.text);
     } else if (event.type === 'acknowledged') {
+      const seen=game.queue.find(t=>t.id===event.id);if(seen)unread[stream(seen)]?.delete(seen.id);
       announce(event.text || 'Ticket acknowledged. SLA active.');
     } else if (event.type === 'phase') {
       toast(event.text); addFeed(event.text); beep('phase');
@@ -87,13 +99,13 @@ function handleEvents() {
 }
 function start() {
   today = new Date().toISOString().slice(0,10); dailySeed = `contact-v3-${today}`;
-  game = createGame(dailySeed, relaxed, classId); resultRecorded = false; lastCaseId = ''; interactionView = 'fix'; lastTicketKey = ''; lastQueueKey = ''; feed = []; pointerActionTicket = null;
+  game = createGame(dailySeed, relaxed, classId); activeDeskTab=stream(game.queue[0]);lifecycleFilter='active';tabSelection={};unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()};pulseUntil={}; $('evidence-drawer').open=false; resultRecorded = false; lastCaseId = ''; interactionView = 'fix'; lastTicketKey = ''; lastQueueKey = ''; feed = []; pointerActionTicket = null;
   $('chuck-message').textContent = '“Welcome, replaceable asset. Your suffering has been marked P3.”';
   clearTimeout(achievementTimer); $('achievement-banner').hidden = true; $('earned-achievements').innerHTML = '';
   $('score-pop').textContent = ''; $('share-status').textContent = ''; $('share-fallback').hidden = true;
   clearTimeout(toastTimer); $('outcome').classList.remove('visible');
   if ($('pause-dialog').open) $('pause-dialog').close();
-  show('game'); previousTime = performance.now(); handleEvents(); render();
+  show('game'); previousTime = performance.now(); handleEvents(); unread[activeDeskTab].clear(); render();
   $('acknowledge-button').focus({preventScroll:true}); window.scrollTo({top:0,behavior:'instant'});
   announce('Shift started. Read the user report. Acknowledge to start your 15-minute SLA, then answer directly or contact the user and run diagnostics. New reports arrive every 30 to 120 seconds. Press P to pause.'); beep('start');
 }
@@ -111,30 +123,39 @@ function render() {
   document.body.classList.toggle('low-morale',game.morale <= 35);
   $('phase-name').textContent = ['THE TRAINING DESK','INCIDENT RESPONSE','ON CALL · PREVENT INCIDENTS'][game.phase];
   $('shift-flavor').textContent = ['Read first. Acknowledge when ready.','Users have stories. Diagnostics have receipts.','Good testing prevents major incidents.'][game.phase];
-  $('queue-count').textContent = `${game.queue.length} open`; $('next-arrival').textContent = game.risks.some(r=>r.status==='pending') ? 'A preventable incident is developing. Check the task board before taking a break.' : game.nextArrival !== null ? `Next report in ${formatSla(game.nextArrival-game.time)}` : game.reportedNormal < game.totalNormal ? 'Next report is being scheduled.' : 'All routine reports received. Close cases to advance.';
-  $('resolved-label').textContent = `${game.resolved} ticket${game.resolved === 1 ? '' : 's'} closed`;
-  const queueKey = game.queue.map(t=>`${t.id}/${t.stage || 0}/${t.acknowledged}/${game.selected===t.id}`).join(',');
-  if (queueKey !== lastQueueKey) {
-    const focusedId = document.activeElement?.dataset.ticket;
-    lastQueueKey = queueKey;
-    $('queue').innerHTML = game.queue.length ? game.queue.map(t=>`<button class="queue-ticket${t.id===game.selected?' selected':''}${t.urgent?' urgent':''}${t.reopened?' reopened':''}" data-ticket="${t.id}" aria-pressed="${t.id===game.selected}" aria-label="${escape(t.source.title)}${t.urgent?', urgent':''}${t.reopened?', reopened':''}"><span class="queue-top"><span class="queue-priority">${t.boss ? `BOSS · SEV ${t.severity}` : t.reopened?'REOPENED':`SEV ${t.severity} · ${t.acknowledged?'ACTIVE':'NEW'}`}</span><span>#${String(t.id).padStart(3,'0')}</span></span><h3>${escape(t.source.title)}</h3><span class="queue-user">${escape(t.source.user.split(' · ')[0])}</span><span class="queue-timer" data-timer="${t.id}"></span><span class="ticket-patience" data-patience="${t.id}"></span></button>`).join('') : '<p class="queue-empty">Nothing on fire. Yet.</p>';
-    if (focusedId) $('queue').querySelector(`[data-ticket="${focusedId}"]`)?.focus({preventScroll:true});
+  $('open-total').textContent=`${game.queue.length} open`;
+  $('next-arrival').textContent=game.nextArrival!==null?`Next report ${formatSla(game.nextArrival-game.time)}`:'All routine reports received';
+  $('resolved-label').textContent=`${game.resolved} ticket${game.resolved===1?'':'s'} closed`;
+  renderDeskTabs();
+  const cases=visibleCases(), archived=lifecycleFilter==='resolved';
+  let ticket=cases.find(t=>t.id===tabSelection[activeDeskTab]) || cases[0];
+  if(ticket){tabSelection[activeDeskTab]=ticket.id;if(!archived)game.selected=ticket.id;}
+  $('ticket-detail').dataset.selectedTicket=ticket?.id || '';
+  $('ticket-detail').classList.toggle('has-case',!!ticket);
+  const queueKey=`${activeDeskTab}/${lifecycleFilter}/`+cases.map(t=>`${t.id}/${t.stage||0}/${t.acknowledged}/${ticket?.id===t.id}/${unread[activeDeskTab]?.has(t.id)}`).join(',');
+  $('workstream-heading').textContent=activeDeskTab==='req'?'Requests':'Incidents';
+  $('queue-count').textContent=`${cases.length} ${lifecycleFilter}`;
+  if(queueKey!==lastQueueKey){
+    const focusedId=document.activeElement?.dataset.ticket;lastQueueKey=queueKey;
+    $('queue').innerHTML=cases.length?cases.map(t=>`<button class="queue-ticket${t.id===ticket?.id?' selected':''}${t.urgent?' urgent':''}${t.reopened?' reopened':''}" ${archived?`data-history-ticket="${t.id}"`:`data-ticket="${t.id}"`} ${unread[activeDeskTab]?.has(t.id)?`data-unread-ticket="${t.id}"`:''} aria-pressed="${t.id===ticket?.id}"><span class="queue-top"><span class="queue-priority">${t.boss?'BOSS · ':''}SEV ${t.severity} · ${archived?(t.resolution==='missed'?'MISSED':'CLOSED'):t.held?'HOLD':t.acknowledged?'ACTIVE':'NEW'}</span><span>#${t.id}</span></span><h3>${escape(t.source.title)}</h3><span class="queue-timer" data-timer="${t.id}"></span><span class="ticket-patience" data-patience="${t.id}"></span></button>`).join(''):`<p class="queue-empty">No ${lifecycleFilter} ${activeDeskTab==='req'?'requests':'incidents'}.</p>`;
+    if(focusedId)$('queue').querySelector(`[data-ticket="${focusedId}"]`)?.focus({preventScroll:true});
   }
-  for (const t of game.queue) {
-    const remaining = t.deadline === null ? null : Math.max(0,t.deadline-game.time), busy = game.work?.ticketId === t.id;
-    const button = $('queue').querySelector(`[data-ticket="${t.id}"]`);
-    button.querySelector('[data-timer]').textContent = busy ? 'IN PROGRESS' : remaining === null ? 'AWAITING ACK' : formatSla(remaining);
-    button.querySelector('[data-patience]').style.width = `${remaining === null ? 0 : Math.min(100,remaining/t.slaSeconds*100)}%`;
-    button.classList.toggle('danger',remaining !== null && remaining < 15);
-    const accessible = `${t.source.title}${t.boss ? `, boss stage ${t.stage} of 2` : ''}${t.urgent ? ', urgent' : ''}${t.reopened ? ', reopened' : ''}, ${remaining === null ? 'awaiting acknowledgement, SLA not started' : `${Math.ceil(remaining)} seconds left`}`;
-    if (button.getAttribute('aria-label') !== accessible) button.setAttribute('aria-label',accessible);
+  for(const t of cases){
+    const b=$('queue').querySelector(`[data-ticket="${t.id}"],[data-history-ticket="${t.id}"]`),remaining=t.deadline===null?null:Math.max(0,t.deadline-game.time);
+    b.querySelector('[data-timer]').textContent=archived?`${t.resolution==='missed'?'SLA missed':'Resolved'} · ${formatSla(t.closedAt)}`:game.work?.ticketId===t.id?'IN PROGRESS':remaining===null?'AWAITING ACK':`${t.held?'SLA RUNNING · ':''}${formatSla(remaining)}`;
+    b.querySelector('[data-patience]').style.width=`${archived||remaining===null?0:Math.min(100,remaining/t.slaSeconds*100)}%`;
+    b.classList.toggle('danger',!archived&&remaining!==null&&remaining<15);
+    b.setAttribute('aria-label',`${t.source.title}, ${archived?(t.resolution==='missed'?'closed after missed SLA':'resolved'):t.held?'on hold, SLA continues':'active'}, ${!archived&&remaining!==null?Math.ceil(remaining)+' seconds remaining':''}`);
   }
-  const ticket = game.queue.find(t=>t.id===game.selected);
-  const caseId = ticket ? `${ticket.id}-${ticket.stage || 0}` : 'empty';
-  if (caseId !== lastCaseId) { lastCaseId = caseId; interactionView = 'fix'; }
+  const caseId = ticket ? `${ticket.id}-${ticket.stage || 0}-${archived}-${ticket.held}` : 'empty';
+  if (caseId !== lastCaseId) { lastCaseId = caseId; interactionView = 'fix';$('ticket-detail').scrollTop=0; }
   const key = ticket ? `${caseId}-${ticket.acknowledged}-${ticket.actions.map(a=>a.tried?'x':'o').join('')}-${(ticket.evidence||[]).map(e=>e.id).join(',')}-${interactionView}` : 'empty';
-  $('empty-ticket').hidden = Boolean(ticket); $('active-ticket').hidden = !ticket; $('action-area').hidden = !ticket || !ticket.acknowledged;
-  $('sla-panel').hidden = !ticket; $('acknowledge-button').hidden = !ticket || ticket.acknowledged; $('acknowledged-note').hidden = !ticket || !ticket.acknowledged;
+  $('empty-ticket').hidden = Boolean(ticket); $('active-ticket').hidden = !ticket; $('action-area').hidden = !ticket || !ticket.acknowledged || ticket.held || archived;
+  $('sla-panel').hidden = !ticket || archived; $('acknowledge-button').hidden = !ticket || ticket.acknowledged || ticket.held || archived; $('acknowledged-note').hidden = !ticket || !ticket.acknowledged || archived;
+  $('hold-button').hidden=!ticket||archived; $('hold-button').textContent=ticket?.held?'Resume':'Hold';$('hold-button').disabled=game.status!=='playing'||game.work?.ticketId===ticket?.id;
+  $('hold-notice').hidden=!ticket?.held||archived; $('history-status').hidden=!ticket||!archived;
+  $('history-status').textContent=archived&&ticket?`${ticket.resolution==='missed'?'Closed · SLA missed':ticket.resolution==='assist'?'Resolved · teammate assist':'Resolved · lasting fix'} at ${formatSla(ticket.closedAt)}. History is read-only.`:'';
+  $('evidence-drawer').hidden=!ticket; if(archived&&ticket)$('evidence-drawer').open=true;
   if (ticket) {
     const remaining = ticket.deadline === null ? null : Math.max(0,ticket.deadline-game.time);
     $('sla-time').textContent = remaining === null ? 'Not started' : formatSla(remaining);
@@ -143,20 +164,23 @@ function render() {
     $('sla-panel').classList.toggle('danger-sla',remaining !== null && remaining <= 15);
     $('acknowledged-note').textContent = ticket.severity <= 2 ? 'Acknowledged. The report-time deadline is unchanged.' : 'Acknowledged. You have 15 minutes from acknowledgement.';
   }
-  if (!ticket) { $('empty-ticket').querySelector('h2').textContent = game.returns.length ? 'Workaround holding…' : 'Desk is quiet.'; $('empty-ticket').querySelector('p').textContent = game.returns.length ? 'It will reopen shortly. The original SLA is still running.' : game.risks.some(r=>r.status==='pending') ? 'A preventable incident is developing. Check the task board before taking a break.' : game.nextArrival !== null ? `Next report in ${formatSla(game.nextArrival-game.time)}. Take a breather, or skip the quiet time.` : 'Close out your project tasks or defer them safely to finish the shift.'; }
-  $('skip-idle-button').disabled = game.status !== 'playing' || !!game.queue.length || !!game.returns.length || !!game.work || game.nextArrival === null || game.risks.some(r=>r.status==='pending');
+  if(!ticket){$('empty-ticket').querySelector('h2').textContent=lifecycleFilter==='resolved'?'No closed cases yet':lifecycleFilter==='hold'?'Nothing on hold':game.queue.length?'This list is clear':'Desk is quiet.';$('empty-ticket').querySelector('p').textContent=game.returns.length?'A workaround will return; its original SLA keeps running.':game.queue.length?'Other tabs may have active work. Check their badges.':game.risks.some(r=>r.status==='pending')?'A preventable risk is developing. Open KTLO.':game.nextArrival!==null?'Read the field guide, work on a project, or take the next call.':'Complete or safely defer outstanding projects to end your shift.';}
+  $('skip-idle-button').hidden=lifecycleFilter!=='active';
+  $('skip-idle-button').disabled=game.status!=='playing'||!!game.queue.length||!!game.returns.length||!!game.work||game.nextArrival===null||game.risks.some(r=>r.status==='pending');
+  $('next-open-button').hidden=!game.queue.some(t=>!t.held);
   if (key !== lastTicketKey) {
     const hadActionFocus = $('actions').contains(document.activeElement);
     lastTicketKey = key;
     if (ticket) {
-      $('active-ticket').innerHTML = `<div class="ticket-meta"><span class="pill ${ticket.urgent?'coral':'purple'}">${ticket.boss ? `SEV ${ticket.severity} BOSS · STAGE ${ticket.stage}/2` : ticket.reopened ? `SEV ${ticket.severity} · REOPENED` : `SEV ${ticket.severity} · ${ticket.acknowledged?'ACKNOWLEDGED':'AWAITING ACK'}`}</span><span>TICKET #${String(ticket.id).padStart(4,'0')}</span></div><div class="ticket-category"><span aria-hidden="true">${escape(ticket.source.icon)}</span>${escape(ticket.source.category)}</div><h2 id="ticket-title">${escape(ticket.source.title)}</h2><p class="user-quote">“${escape(ticket.source.quote)}”</p><span class="ticket-user">${escape(ticket.source.user)}</span><div class="clue"><span class="clue-label">REPORTED SYMPTOMS · UNVERIFIED</span><p>${escape(ticket.source.brief || ticket.source.quote)}</p></div>`;
+      $('active-ticket').innerHTML = `<div class="ticket-meta"><span class="pill ${ticket.urgent?'coral':'purple'}">${ticket.boss ? `SEV ${ticket.severity} BOSS · STAGE ${ticket.stage}/2` : ticket.reopened ? `SEV ${ticket.severity} · REOPENED` : `SEV ${ticket.severity} · ${ticket.acknowledged?'ACKNOWLEDGED':'AWAITING ACK'}`}</span><span>TICKET #${String(ticket.id).padStart(4,'0')}</span></div><div class="ticket-category"><span aria-hidden="true">${escape(ticket.source.icon)}</span>${escape(ticket.source.category)}</div><h2 id="ticket-title">${escape(ticket.source.title)}</h2><details class="caller-story"><summary>Caller’s account</summary><p class="user-quote">“${escape(ticket.source.quote)}”</p></details><span class="ticket-user">${escape(ticket.source.user)}</span><div class="clue"><span class="clue-label">REPORTED SYMPTOMS · UNVERIFIED</span><p>${escape(ticket.source.brief || ticket.source.quote)}</p></div>`;
       $('actions').innerHTML = ticket.actions.map((a,i)=>`<button class="action-button" data-action="${i}" data-for-ticket="${ticket.id}" data-stage="${ticket.stage || 0}" ${a.tried?'disabled':''}><span class="action-number" aria-hidden="true">${i+1}</span><span class="action-label">${escape(a.label)}${a.tried ? (a.kind==='patch' ? ' · used' : ' · tried') : ''}${a.risk?' · creates service risk':''}</span><span class="action-duration">${ACTIONS[a.kind].seconds}s</span></button>`).join('');
       if (hadActionFocus) { if (ticket.acknowledged) $('actions').querySelector('button:not([disabled])')?.focus({preventScroll:true}); else $('acknowledge-button').focus({preventScroll:true}); }
       const slaAnnouncement = ticket.severity <= 2
         ? `Sev ${ticket.severity}. Your ${ticket.slaSeconds}-second SLA started when reported. ${ticket.acknowledged ? 'Acknowledged; the deadline is unchanged.' : 'Acknowledge to respond; the clock is already running.'}`
         : ticket.acknowledged ? 'Acknowledged. Your 15-minute SLA is active.' : 'Sev 3. Read at your own pace. Your 15-minute SLA starts only after acknowledgement.';
+      $('evidence-count').textContent=ticket.evidence.length;
       const latestEvidence = ticket.evidence?.at(-1);
-      announce(`${slaAnnouncement} ${ticket.source.title}. ${latestEvidence ? `${latestEvidence.reply}. ${latestEvidence.evidence}` : ticket.source.brief || ticket.source.quote}`);
+      if(!archived)announce(`${slaAnnouncement} ${ticket.source.title}. ${latestEvidence ? `${latestEvidence.reply}. ${latestEvidence.evidence}` : ticket.source.brief || ticket.source.quote}`);
       $('fix-options').hidden = interactionView !== 'fix';
       $('investigation-options').hidden = interactionView === 'fix';
       const modes = [['fix-view-button','fix'],['contact-user-button','question'],['diagnostics-button','diagnostic']];
@@ -167,16 +191,16 @@ function render() {
       $('case-notes').innerHTML = (ticket.evidence || []).length ? `<h3>CASE NOTES · ${(ticket.evidence || []).length} collected</h3>${ticket.evidence.map(e=>`<article class="evidence-item ${e.kind}"><span class="clue-label">${e.kind==='question'?'USER REPLY':'DIAGNOSTIC RESULT'}</span><p class="evidence-reply">${escape(e.reply)}</p><p class="evidence-fact"><strong>${e.kind==='question'?'Reported detail':'Verified finding'}:</strong> ${escape(e.evidence)}</p></article>`).join('')}` : '<p class="notes-empty">No evidence collected yet. Choose a fix, contact the user, or run a diagnostic.</p>';
     }
   }
-  $('actions').querySelectorAll('button').forEach((button,i)=>{button.disabled = !ticket || !ticket.acknowledged || Boolean(game.work) || !!ticket?.actions[i]?.tried || game.status !== 'playing';});
-  $('investigation-options').querySelectorAll('button').forEach(button=>{button.disabled = !ticket?.acknowledged || !!game.work || game.status !== 'playing' || !!ticket?.evidence?.some(e=>e.id===button.dataset.inquiry);});
+  $('actions').querySelectorAll('button').forEach((button,i)=>{button.disabled = !ticket || archived || ticket.held || !ticket.acknowledged || Boolean(game.work) || !!ticket?.actions[i]?.tried || game.status !== 'playing';});
+  $('investigation-options').querySelectorAll('button').forEach(button=>{button.disabled = archived || ticket?.held || !ticket?.acknowledged || !!game.work || game.status !== 'playing' || !!ticket?.evidence?.some(e=>e.id===button.dataset.inquiry);});
   if(focusedInquiry && $('investigation-options').querySelector(`[data-inquiry="${CSS.escape(focusedInquiry)}"]`)?.disabled) ($('investigation-options').querySelector('button:not(:disabled)') || $('contact-user-button')).focus({preventScroll:true});
-  $('boss-status').hidden = !ticket?.boss;
+  $('boss-status').hidden = !ticket?.boss || archived;
   document.querySelector('.ticket-panel').classList.toggle('boss-active',Boolean(ticket?.boss));
   if (ticket?.boss) $('boss-status').innerHTML = `<span>TECH SKILL <b>${ticket.techSkill}/10</b></span><span>DIAGNOSIS <b>${ticket.stage}/2</b></span><span class="boss-health">${ticket.stage===1?'▰ ▰':'▱ ▰'}</span>`;
   $('bluff-button').hidden = !(ticket?.boss && classId === 'faker');
-  $('bluff-button').disabled = !ticket?.acknowledged || !!game.work || !!ticket?.bluffed || game.status !== 'playing';
+  $('bluff-button').disabled = archived || ticket?.held || !ticket?.acknowledged || !!game.work || !!ticket?.bluffed || game.status !== 'playing';
   $('bluff-description').textContent = ticket?.bluffed ? 'Bluff used. The problem still needs a real fix.' : `Your bluff skill: 4/10 · Boss tech skill: ${ticket?.techSkill || 0}/10 · Buys time, never fixes`;
-  $('assist-button').disabled = !ticket?.acknowledged || Boolean(ticket?.boss || ticket?.incident) || !game.assists || Boolean(game.work) || game.status !== 'playing';
+  $('assist-button').disabled = archived || ticket?.held || !ticket?.acknowledged || Boolean(ticket?.boss || ticket?.incident) || !game.assists || Boolean(game.work) || game.status !== 'playing';
   $('assist-count').textContent = ticket?.boss || ticket?.incident ? 'This case needs your expertise' : `${game.assists} left · +75 pts`;
   renderProjects();
   $('cancel-work-button').hidden = game.work?.type !== 'project';
@@ -187,32 +211,54 @@ function render() {
     $('work-fill').style.width = `${Math.min(100,100*(game.time-work.started)/(work.ends-work.started))}%`;
   }
 }
-function renderProjects() {
-  const focused=document.activeElement?.dataset.project, focusedAction=document.activeElement?.dataset.projectAction;
-  const labels={test:'Run compatibility test',release:'Release verified change',unsafeRelease:'Release without testing',remediate:'Roll back and test before impact',defer:'Defer safely'};
-  const projectKey=JSON.stringify([game.projects.map(p=>[p.id,p.status,p.tested,game.completedNormal>=p.unlockAfter]),game.risks.map(r=>r.status)]);
-  if($('projects').dataset.key!==projectKey) {
-    $('projects').dataset.key=projectKey;
-    $('projects').innerHTML=game.projects.map(p=>{
-      const locked=game.completedNormal<p.unlockAfter, risk=game.risks.find(r=>r.projectId===p.id&&r.status==='pending');
-      const options=locked||['completed','deferred'].includes(p.status)?[]:risk?['remediate']:p.tested?['release','defer']:['test','unsafeRelease','defer'];
-      return `<article class="project-card"><h3>${escape(p.title)}</h3><p>${escape(p.description)}</p><span class="project-state">${locked?`Available after ${p.unlockAfter} routine cases`:p.status==='pending'?(p.tested?'Test passed · ready to release':'Awaiting testing'):p.status==='released'?'UNTESTED RELEASE · RISK ACTIVE':p.status==='deferred'?'Safely deferred':'Completed'}</span>${p.tested?`<p class="evidence-fact">${escape(p.finding)}</p>`:''}<div class="project-actions">${options.map(action=>`<button data-project="${p.id}" data-project-action="${action}" class="${action==='unsafeRelease'?'risky-project':''}">${labels[action]}${PROJECT_ACTIONS[action]?` · ${PROJECT_ACTIONS[action]}s`:''}</button>`).join('')}</div></article>`;
-    }).join('');
-    if(focused) $('projects').querySelector(`[data-project="${CSS.escape(focused)}"][data-project-action="${CSS.escape(focusedAction)}"]`)?.focus({preventScroll:true});
-  }
-  $('projects').querySelectorAll('button').forEach(button=>button.disabled=!!game.work||game.status!=='playing');
-  const risks=game.risks.filter(r=>r.status==='pending');
-  $('risk-register').innerHTML=risks.length?risks.map(r=>`<article class="risk-card"><strong>Incident risk · ${formatSla(r.due-game.time)}</strong><p>${escape(r.cause)}</p><small>${r.projectId?'Use the rollback/test task below.':'Correct the originating ticket before this timer ends.'} Leaving it creates ${game.incidentsReported>0&&game.sev1Unlocked?'Sev 1':'Sev 2'}.</small></article>`).join(''):'<p class="no-risk">No active incident risks. Tested work keeps it that way.</p>';
+function markNew(tab,id){unread[tab]?.add(id);pulseUntil[tab]=game.time+2;}
+function setDeskTab(tab,filter='active'){
+  if(!['inc','req','projects','ktlo','training'].includes(tab))return;
+  activeDeskTab=tab;lifecycleFilter=filter;unread[tab]?.clear();lastTicketKey='';lastQueueKey='';render();
 }
+function renderDeskTabs(){
+  const counts={inc:game.queue.filter(t=>stream(t)==='inc').length,req:game.queue.filter(t=>stream(t)==='req').length,projects:game.projects.filter(p=>!closedProject(p)&&game.completedNormal>=p.unlockAfter).length,ktlo:game.risks.filter(r=>r.status==='pending').length};
+  document.querySelectorAll('[data-desk-tab]').forEach(b=>{const tab=b.dataset.deskTab,selected=tab===activeDeskTab;b.setAttribute('aria-selected',String(selected));b.tabIndex=selected?0:-1;b.classList.toggle('new-arrival',(pulseUntil[tab]||0)>game.time);const count=b.querySelector('[data-count]');if(count)count.textContent=counts[tab];const badge=b.querySelector('[data-unread]');if(badge){badge.hidden=!unread[tab].size;badge.textContent=unread[tab].size;badge.setAttribute('aria-label',`${unread[tab].size} new`);}});
+  const tickets=['inc','req'].includes(activeDeskTab);
+  $('ticket-workspace').hidden=!tickets;$('task-workspace').hidden=!['projects','ktlo'].includes(activeDeskTab);$('training-workspace').hidden=activeDeskTab!=='training';
+  if(tickets)$('ticket-workspace').setAttribute('aria-labelledby',`tab-${activeDeskTab}`);else $('task-workspace').setAttribute('aria-labelledby',`tab-${activeDeskTab}`);
+  $('desk-filters').hidden=activeDeskTab==='training';
+  document.querySelectorAll('[data-desk-filter]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.deskFilter===lifecycleFilter));b.hidden=activeDeskTab==='ktlo'&&b.dataset.deskFilter==='hold';});
+  const urgent=game.queue.filter(t=>t.severity<=2),risks=game.risks.filter(r=>r.status==='pending');
+  $('desk-alert-button').hidden=!urgent.length&&!risks.length;
+  $('desk-alert-button').textContent=urgent.length?`${urgent.length} urgent · ${formatSla(Math.min(...urgent.map(t=>t.deadline))-game.time)}`:`${risks.length} risk · ${formatSla(Math.min(...risks.map(r=>r.due))-game.time)}`;
+}
+function renderProjects(){
+  const isKtlo=activeDeskTab==='ktlo';
+  $('task-heading').textContent=isKtlo?'Keep the lights on':'Project desk';
+  $('task-description').textContent=isKtlo?'Prevent known risks before impact. These timers keep running in every tab.':'Test before release. One worker shared with tickets. Hold does not finish a project.';
+  const risks=game.risks.filter(r=>lifecycleFilter==='resolved'?r.status!=='pending':r.status==='pending');
+  $('risk-register').hidden=!isKtlo;$('projects').hidden=isKtlo;
+  const focus=document.activeElement?.dataset.project,focusAction=document.activeElement?.dataset.projectAction;
+  const key=JSON.stringify([activeDeskTab,lifecycleFilter,game.projects.map(p=>[p.id,p.status,p.tested,p.held,game.completedNormal>=p.unlockAfter]),risks.map(r=>[r.id,r.status])]);
+  if($('projects').dataset.key!==key){
+    $('projects').dataset.key=key;
+    const labels={test:'Run compatibility test',release:'Release verified change',unsafeRelease:'Release without testing',remediate:'Roll back and test',defer:'Defer safely',hold:'Hold project',resume:'Resume project'};
+    const button=(p,action)=>`<button data-project="${p.id}" data-project-action="${action}" class="${action==='unsafeRelease'?'risky-project':''}">${labels[action]}${PROJECT_ACTIONS[action]?` · ${PROJECT_ACTIONS[action]}s`:''}</button>`;
+    const projects=game.projects.filter(p=>lifecycleFilter==='resolved'?closedProject(p):!closedProject(p)&&!!p.held===(lifecycleFilter==='hold'));
+    $('projects').innerHTML=projects.map(p=>{const locked=game.completedNormal<p.unlockAfter,risk=game.risks.find(r=>r.projectId===p.id&&r.status==='pending');const options=locked||closedProject(p)?[]:p.held?['resume']:risk?[]:p.tested?['release','defer','hold']:['test','unsafeRelease','defer','hold'];return `<article class="project-card"><h3>${escape(p.title)}</h3><p>${escape(p.description)}</p><span class="project-state">${locked?`Available after ${p.unlockAfter} routine cases`:p.held?'ON HOLD':p.status==='pending'?(p.tested?'Test passed · ready':'Awaiting testing'):p.status==='released'?'RISK ACTIVE · open KTLO':p.status==='deferred'?'Safely deferred':'Completed'}</span>${p.tested?`<p class="evidence-fact">${escape(p.finding)}</p>`:''}<div class="project-actions">${options.map(a=>button(p,a)).join('')}${risk?'<button data-open-ktlo>Open KTLO prevention task</button>':''}</div></article>`;}).join('');
+    $('risk-register').innerHTML=risks.map(r=>`<article class="risk-card"><strong>${r.status==='pending'?'Incident risk':r.status==='prevented'?'Prevented':'Escalated to INC'} <span data-risk-time="${r.id}"></span></strong><p>${escape(r.cause)}</p>${r.status==='pending'?(r.projectId?`<div class="project-actions">${button(game.projects.find(p=>p.id===r.projectId),'remediate')}</div>`:`<button data-open-case="${r.sourceTicketId}">Correct the originating case</button>`):'<p>This risk is closed. Check INC resolved history for any resulting incident.</p>'}</article>`).join('');
+    $('task-empty').hidden=(isKtlo?risks:projects).length>0;$('task-empty').textContent=isKtlo?'No prevention work in this view. Tested projects keep the lights on.':'No projects in this status. Check Active or Hold.';
+    if(focus)document.querySelector(`[data-project="${CSS.escape(focus)}"][data-project-action="${CSS.escape(focusAction)}"]`)?.focus({preventScroll:true});
+  }
+  for(const r of risks){const timer=document.querySelector(`[data-risk-time="${r.id}"]`);if(timer)timer.textContent=r.status==='pending'?formatSla(r.due-game.time):'';}
+  $('task-workspace').querySelectorAll('[data-project-action]').forEach(b=>b.disabled=!!game.work||game.status!=='playing');
+}
+function openCase(id){const t=game.queue.find(t=>t.id===id);if(!t)return;activeDeskTab=stream(t);lifecycleFilter=t.held?'hold':'active';tabSelection[activeDeskTab]=id;unread[activeDeskTab].delete(id);selectTicket(game,id);lastQueueKey='';render();}
 function act(index, expected = game?.selected, stage = undefined) {
-  if (game && takeAction(game,index,expected,stage)) { beep('click'); render(); }
+  if (game && ['inc','req'].includes(activeDeskTab) && lifecycleFilter!=='resolved' && takeAction(game,index,expected,stage)) { unread[activeDeskTab]?.delete(expected); beep('click'); render(); }
 }
 function pause() {
   if (!game || game.status !== 'playing') return;
   // Apply time since the previous animation frame before pausing.
   advance(game,Math.max(0,(performance.now()-previousTime)/1000)); handleEvents();
   if (game.status === 'finished') return;
-  game.status = 'paused'; render(); $('pause-dialog').showModal(); $('resume-button').focus();
+  game.status = 'paused'; if($('system-dialog').open)$('system-dialog').close(); render(); $('pause-dialog').showModal(); $('resume-button').focus();
 }
 function resume() {
   if (!game || game.status !== 'paused') return;
@@ -220,7 +266,7 @@ function resume() {
 }
 function finish(quit = false) {
   if (resultRecorded) return;
-  resultRecorded = true;
+  resultRecorded = true; if($('system-dialog').open)$('system-dialog').close();
   if (quit) { game.status = 'finished'; game.work = null; game.bonus = 0; }
   if ($('pause-dialog').open) $('pause-dialog').close();
   clearTimeout(toastTimer); $('outcome').classList.remove('visible');
@@ -258,12 +304,12 @@ let inquiryPressed = null;
 $('investigation-options').addEventListener('pointerdown',e=>{const b=e.target.closest('[data-inquiry]');inquiryPressed=b?{id:b.dataset.inquiry,ticket:Number(b.dataset.forTicket),stage:Number(b.dataset.stage)||undefined}:null;});
 $('investigation-options').addEventListener('pointercancel',()=>{inquiryPressed=null;});
 $('investigation-options').addEventListener('click',e=>{const b=e.target.closest('[data-inquiry]');if(!b)return;const target=e.detail===0?{id:b.dataset.inquiry,ticket:Number(b.dataset.forTicket),stage:Number(b.dataset.stage)||undefined}:inquiryPressed;inquiryPressed=null;if(target&&game&&investigateTicket(game,target.id,target.ticket,target.stage)){beep('click');render();}});
-$('projects').addEventListener('click',e=>{const b=e.target.closest('[data-project-action]');if(b&&game&&startProject(game,b.dataset.project,b.dataset.projectAction)){handleEvents();render();}});
+$('task-workspace').addEventListener('click',e=>{const b=e.target.closest('[data-project-action]');if(b&&game){const action=b.dataset.projectAction,ok=['hold','resume'].includes(action)?setProjectHeld(game,b.dataset.project,action==='hold'):startProject(game,b.dataset.project,action);if(ok){handleEvents();render();}}if(e.target.closest('[data-open-ktlo]'))setDeskTab('ktlo');const c=e.target.closest('[data-open-case]');if(c)openCase(Number(c.dataset.openCase));});
 $('cancel-work-button').addEventListener('click',()=>{if(game&&cancelWork(game)){handleEvents();render();}});
-$('skip-idle-button').addEventListener('click',()=>{if(game&&skipIdle(game)){handleEvents();render();$('acknowledge-button').focus({preventScroll:true});}});
+$('skip-idle-button').addEventListener('click',()=>{if(game&&skipIdle(game)){handleEvents();if(game.selected)openCase(game.selected);render();$('acknowledge-button').focus({preventScroll:true});}});
 $('menu-button').addEventListener('click',()=>{show('lobby');game=null;renderLobby();$('start-button').focus();});
 $('sound-button').addEventListener('click',()=>{sound=!sound;saved.sound=sound;save();renderSound();beep('click');});
-$('queue').addEventListener('click',e=>{const button=e.target.closest('[data-ticket]');if(button&&game&&selectTicket(game,Number(button.dataset.ticket)))render();});
+$('queue').addEventListener('click',e=>{const b=e.target.closest('[data-ticket],[data-history-ticket]');if(!b||!game)return;const id=Number(b.dataset.ticket||b.dataset.historyTicket);tabSelection[activeDeskTab]=id;unread[activeDeskTab]?.delete(id);if(b.dataset.ticket)selectTicket(game,id);render();});
 // Bind clicks to the ticket visible at pointer-down; an expiring card cannot redirect the click.
 $('actions').addEventListener('pointerdown',e=>{const b=e.target.closest('[data-for-ticket]');pointerActionTicket=b?.dataset.forTicket ?? null;pointerActionStage=Number(b?.dataset.stage)||undefined;});
 $('actions').addEventListener('pointercancel',()=>{pointerActionTicket=null;pointerActionStage=undefined;});
@@ -284,12 +330,13 @@ document.addEventListener('keydown',e=>{
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
   const key=e.key.toLowerCase();
   if (!$('lobby').hidden && key==='enter' && (e.target===document.body || e.target===$('main'))) {e.preventDefault();start();return;}
+  if ($('system-dialog').open) return;
   if (game?.status==='paused') {if(key==='p'){e.preventDefault();resume();}return;}
   if (game?.status!=='playing') return;
   if (key==='p' || key==='escape') {e.preventDefault();pause();return;}
-  if (key==='a') {e.preventDefault();$('acknowledge-button').click();}
-  if (interactionView==='fix' && ['1','2','3'].includes(key)) {e.preventDefault();act(Number(key)-1);}
-  if (key==='q'||key==='e') {e.preventDefault();const index=game.queue.findIndex(t=>t.id===game.selected);const next=game.queue[(index+(key==='e'?1:-1)+game.queue.length)%game.queue.length];if(next){selectTicket(game,next.id);render();}}
+  if (key==='a' && ['inc','req'].includes(activeDeskTab) && lifecycleFilter==='active') {e.preventDefault();$('acknowledge-button').click();}
+  if (['inc','req'].includes(activeDeskTab) && lifecycleFilter==='active' && interactionView==='fix' && ['1','2','3'].includes(key)) {e.preventDefault();act(Number(key)-1);}
+  if (key==='q'||key==='e') {e.preventDefault();const list=visibleCases(),index=list.findIndex(t=>t.id===tabSelection[activeDeskTab]);const next=list[(index+(key==='e'?1:-1)+list.length)%list.length];if(next){tabSelection[activeDeskTab]=next.id;if(lifecycleFilter!=='resolved')selectTicket(game,next.id);render();}}
 });
 $('share-button').addEventListener('click',async()=>{
   if (!game) return;
@@ -298,4 +345,14 @@ ${today} daily shift. Can you beat my help desk?`;
   try {if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(text);$('share-status').textContent='Challenge copied. Send it to your on-call group.';}
   catch {$('share-fallback').value=text;$('share-fallback').hidden=false;$('share-fallback').focus();$('share-fallback').select();$('share-status').textContent='Select and copy your challenge text above.';}
 });
+
+$('hold-button').addEventListener('click',()=>{const t=game?.queue.find(t=>t.id===Number($('ticket-detail').dataset.selectedTicket));if(t&&setTicketHeld(game,t.id,!t.held)){lifecycleFilter=t.held?'hold':'active';handleEvents();render();}});
+$('next-open-button').addEventListener('click',()=>{const t=game?.queue.find(t=>!t.held);if(t)openCase(t.id);});
+$('desk-alert-button').addEventListener('click',()=>{const t=game?.queue.filter(t=>t.severity<=2).sort((a,b)=>a.deadline-b.deadline)[0];if(t)openCase(t.id);else setDeskTab('ktlo');});
+$('desk-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-desk-tab]');if(b)setDeskTab(b.dataset.deskTab);});
+$('desk-tabs').addEventListener('keydown',e=>{const buttons=[...$('desk-tabs').querySelectorAll('[data-desk-tab]')],index=buttons.indexOf(document.activeElement);if(index<0)return;let next;if(e.key==='ArrowRight')next=(index+1)%buttons.length;else if(e.key==='ArrowLeft')next=(index+buttons.length-1)%buttons.length;else if(e.key==='Home')next=0;else if(e.key==='End')next=buttons.length-1;else return;e.preventDefault();buttons[next].focus();setDeskTab(buttons[next].dataset.deskTab);});
+$('desk-filters').addEventListener('click',e=>{const b=e.target.closest('[data-desk-filter]');if(b){lifecycleFilter=b.dataset.deskFilter;lastTicketKey='';lastQueueKey='';render();}});
+$('system-button').addEventListener('click',()=>{$('system-dialog').showModal();$('close-system-button').focus();});
+$('close-system-button').addEventListener('click',()=>{$('system-dialog').close();$('system-button').focus();});
+
 renderLobby();renderSound();requestAnimationFrame(frame);
