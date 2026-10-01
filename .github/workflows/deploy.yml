@@ -94,3 +94,24 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id E1E5FO0J6V9IIP \
             --paths "/*"
+
+      - name: Verify live playtest version
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --location --max-time 15 \
+              https://www.servicedeskhero.com/version.json -o /tmp/sdh-version.json; then
+              if node --input-type=module -e "import fs from 'node:fs'; const v=JSON.parse(fs.readFileSync('/tmp/sdh-version.json')); if(v.commit!==process.env.EXPECTED_COMMIT.slice(0,7)) process.exit(1); console.log(v);"; then
+                curl --fail --silent --show-error --location --max-time 15 https://www.servicedeskhero.com/ -o /tmp/sdh-live.html
+                grep -q 'DEV PLAYTEST' /tmp/sdh-live.html
+                curl --fail --silent --show-error --location --max-time 15 https://www.servicedeskhero.com/career.html -o /tmp/sdh-career.html
+                grep -q 'main-clicker' /tmp/sdh-career.html
+                echo "Verified live Rush Hour and Career at expected commit" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo 'Live version could not be verified after cache propagation' >&2
+          exit 1
