@@ -60,7 +60,8 @@ function handleEvents() {
     if(event.type==='held'){toast(event.text);addFeed(event.text);announce(event.text);}
     if (event.type === 'achievement') {
       const achievement = event.achievement || event;
-      toast(`Achievement: ${achievement.title} · +${achievement.points}`);addFeed(`${achievement.title} · +${achievement.points}`);
+      const achievementText=`Achievement: ${achievement.title} · +${achievement.points}`;
+      toast(`${$('outcome').classList.contains('visible') ? $('outcome').textContent+' ' : ''}${achievementText}`);addFeed(achievementText);
       clearTimeout(achievementTimer); $('achievement-banner').hidden = false;
       $('achievement-banner').innerHTML = `<span>NEW ACHIEVEMENT · +${achievement.points || 0}</span><strong>${escape(achievement.title || '')}</strong><p>${escape(achievement.description || '')}</p>`;
       achievementTimer = setTimeout(() => $('achievement-banner').hidden = true,4500);
