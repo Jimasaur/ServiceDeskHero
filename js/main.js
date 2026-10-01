@@ -6,6 +6,7 @@
 // ── Wait for constants.js to populate window.GAME_DATA ──
 const { CAREER, UPGRADES, HEROES, SKILLS, OFFICE_UPGRADES, INCIDENTS, ACHIEVEMENTS, DIFFICULTY_MODES } = window.GAME_DATA;
 const SFX = window.SFX;
+const FEEDBACK_ALLOWED = ['servicedeskhero.com', 'www.servicedeskhero.com'].includes(window.location.hostname);
 const FEEDBACK_ENDPOINT = 'https://xthqp43m7fbaunjuvalsg5qgdm0ooggz.lambda-url.us-east-1.on.aws/';
 
 // ══════════════════════════════════════════════════════════════
@@ -2408,7 +2409,8 @@ function closeHelp() {
 
 function openFeedback() {
   document.getElementById('feedback-modal').classList.remove('hidden');
-  document.getElementById('feedback-status').textContent = '';
+  document.getElementById('feedback-status').textContent = FEEDBACK_ALLOWED ? '' : 'Feedback is disabled in previews. Nothing will be sent.';
+  document.getElementById('btn-submit-feedback').disabled = !FEEDBACK_ALLOWED;
 }
 
 function closeFeedback() {
@@ -2417,6 +2419,7 @@ function closeFeedback() {
 
 async function submitFeedback(evt) {
   evt.preventDefault();
+  if (!FEEDBACK_ALLOWED) return;
   const type = document.getElementById('feedback-type').value;
   const message = document.getElementById('feedback-message').value.trim();
   const email = document.getElementById('feedback-email').value.trim();
