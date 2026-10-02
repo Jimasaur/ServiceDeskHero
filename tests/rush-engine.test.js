@@ -451,7 +451,7 @@ test('untested project risk can be prevented before impact, including at the exa
     const g=createGame(`prevent-${elapsed}`);doProject(g,PROJECTS[0].id,'unsafeRelease');advance(g,elapsed);
     doProject(g,PROJECTS[0].id,'remediate');advance(g,120);
     assert.equal(g.incidentsReported,0);assert.equal(g.incidentsPrevented,1);assert.equal(g.risks[0].status,'prevented');
-    assert.equal(g.score,400);assert.equal(g.projects[0].status,'completed');
+    assert.equal(g.score,0);assert.equal(g.projects[0].status,'completed');
   }
 });
 test('unacknowledged Sev 2 still expires after three minutes exactly once',()=>{
@@ -507,10 +507,10 @@ test('expert and beginner paths both succeed; efficient correct first tries earn
   const inquiry=selected(beginner).source.investigations.find(i=>i.kind==='diagnostic');
   investigateTicket(beginner,inquiry.id);advance(beginner,4);
   takeAction(expert,indexFor(expert,'fix'));takeAction(beginner,indexFor(beginner,'fix'));advance(expert,2.4);advance(beginner,2.4);
-  assert.equal(expert.fixes,1);assert.equal(beginner.fixes,1);assert.equal(expert.score-beginner.score,25);assert.equal(beginner.time-expert.time,4);
-  const guess=createGame('learning');act(guess,'wrong');act(guess);assert.equal(guess.score,beginner.score);
+  assert.equal(expert.fixes,1);assert.equal(beginner.fixes,1);assert.equal(expert.score,beginner.score);assert.equal(beginner.time-expert.time,4);
+  const guess=createGame('learning');act(guess,'wrong');act(guess);assert.ok(guess.score<beginner.score);
 });
-test('safe releases and prevention pay more than incident recovery even at maximum streak',()=>{
+test('safe releases pay more than incident recovery even at maximum streak',()=>{
   const g=createGame();doProject(g,PROJECTS[0].id,'unsafeRelease');advance(g,60);g.streak=9;
   acknowledgeTicket(g,g.selected);const before=g.score;takeAction(g,indexFor(g,'fix'));advance(g,2.4);
   assert.equal(g.score-before,200);assert.equal(g.achievements.length,0);assert.ok(g.score<400&&g.score<450);

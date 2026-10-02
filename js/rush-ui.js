@@ -79,8 +79,8 @@ function handleEvents() {
       toast(`${label}: ${event.reply}`); addFeed(`${label} recorded for ticket #${event.ticketId}.`);
       announce(`${label}. ${event.reply}. ${event.evidence}`); beep('click');
     } else if (event.type === 'outcome') {
-      const prefix = event.kind === 'fix' ? `+${event.points} · ${event.boss && !event.defeated ? "Stage cleared. " : "Fixed for good. "}` : event.kind === 'patch' ? '+55 · Back in 11s. ' : event.kind === 'assist' ? '+75 · Teamwork. ' : `−${event.penalty ?? 10} morale · Try another move. `;
-      toast(prefix + (event.expert?'Efficient diagnosis +25. ':'') + (event.incident?'+10 morale. ':'') + event.text, event.kind === 'wrong');
+      const prefix = event.kind === 'fix' ? `+${event.points} · ${event.boss && !event.defeated ? "Stage cleared. " : "Fixed for good. "}` : event.kind === 'patch' ? '+55 · Back in 11s. ' : event.kind === 'assist' ? '+75 · Teamwork. ' : `-${Math.abs(event.moraleDelta ?? event.penalty ?? 10)} morale · Try another move. `;
+      toast(prefix + (event.expert?'Efficient diagnosis +25. ':'') + (event.investigated?'Evidence-backed diagnosis +25. ':'') + (event.incident&&event.kind==='fix'?`+${event.moraleDelta} morale. `:'') + event.text, event.kind === 'wrong');
       addFeed(`${event.title} · ${event.kind === 'fix' ? (event.boss && !event.defeated ? 'stage cleared' : 'resolved') : event.kind === 'patch' ? 'temporarily patched' : event.kind === 'assist' ? 'handled by teammate' : 'still broken'}`,event.kind === 'wrong');
       beep(event.kind); $('score-pop').textContent = event.points ? `+${event.points}` : '';
       if (event.streak === 3) $('chuck-message').textContent = '“Three correct moves. How upsetting. We had already drafted your replacement listing.”';
@@ -154,7 +154,7 @@ function render() {
   }
   for(const t of cases){
     const b=$('queue').querySelector(`[data-ticket="${t.id}"],[data-history-ticket="${t.id}"]`),remaining=t.deadline===null?null:Math.max(0,t.deadline-game.time);
-    b.querySelector('[data-timer]').textContent=archived?`${t.resolution==='missed'?'SLA missed':'Resolved'} · ${formatSla(t.closedAt)}`:game.work?.ticketId===t.id?'IN PROGRESS':remaining===null?'AWAITING ACK':`${t.held?'SLA RUNNING · ':''}${formatSla(remaining)}`;
+    b.querySelector('[data-timer]').textContent=archived?`${t.handoff?'RECOVERY HANDED OFF':t.resolution==='missed'?'SLA missed':'Resolved'} · ${formatSla(t.closedAt)}`:game.work?.ticketId===t.id?'IN PROGRESS':remaining===null?'AWAITING ACK':`${t.held?'SLA RUNNING · ':''}${formatSla(remaining)}`;
     b.querySelector('[data-patience]').style.width=`${archived||remaining===null?0:Math.min(100,remaining/t.slaSeconds*100)}%`;
     b.classList.toggle('danger',!archived&&remaining!==null&&remaining<15);
     b.setAttribute('aria-label',`${t.source.title}, ${archived?(t.resolution==='missed'?'closed after missed SLA':'resolved'):t.held?'on hold, SLA continues':'active'}, ${!archived&&remaining!==null?Math.ceil(remaining)+' seconds remaining':''}`);
@@ -166,7 +166,7 @@ function render() {
   $('sla-panel').hidden = !ticket || archived; $('acknowledge-button').hidden = !ticket || ticket.acknowledged || ticket.held || archived; $('acknowledged-note').hidden = !ticket || !ticket.acknowledged || archived;
   $('hold-button').hidden=!ticket||archived; $('hold-button').textContent=ticket?.held?'Resume':'Hold';$('hold-button').disabled=game.status!=='playing'||game.work?.ticketId===ticket?.id;
   $('hold-notice').hidden=!ticket?.held||archived; $('history-status').hidden=!ticket||!archived;
-  $('history-status').textContent=archived&&ticket?`${ticket.resolution==='missed'?'Closed · SLA missed':ticket.resolution==='assist'?'Resolved · teammate assist':'Resolved · lasting fix'} at ${formatSla(ticket.closedAt)}. History is read-only.`:'';
+  $('history-status').textContent=archived&&ticket?`${ticket.resolution==='missed'?'Closed · SLA missed':ticket.resolution==='assist'?'Resolved · teammate assist':'Resolved · lasting fix'} at ${formatSla(ticket.closedAt)}. ${ticket.handoff?ticket.handoff.text+' ':''}History is read-only.`:'';
   $('evidence-drawer').hidden=!ticket; if(archived&&ticket)$('evidence-drawer').open=true;
   if (ticket) {
     const remaining = ticket.deadline === null ? null : Math.max(0,ticket.deadline-game.time);
@@ -197,7 +197,7 @@ function render() {
       $('investigation-options').hidden = interactionView === 'fix';
       const modes = [['fix-view-button','fix'],['contact-user-button','question'],['diagnostics-button','diagnostic']];
       for (const [id,mode] of modes) { $(id).classList.toggle('selected',interactionView===mode); $(id).setAttribute('aria-pressed',String(interactionView===mode)); }
-      $('approach-hint').textContent = interactionView === 'fix' ? 'Know the answer? Fix it now. Questions and diagnostics can reveal every answer. Correct first-try fixes without them earn +25.' : interactionView === 'question' ? 'Ask what actually happened. A confident answer is still only a user report.' : 'Run a targeted check. Facts stay with this ticket; the SLA keeps running.';
+      $('approach-hint').textContent = interactionView === 'fix' ? 'Know the answer? Fix it now. Questions and diagnostics can reveal every answer. A correct direct fix or evidence-backed first try earns +25 once; extra questions earn no extra points.' : interactionView === 'question' ? 'Ask what actually happened. A confident answer is still only a user report.' : 'Run a targeted check. Facts stay with this ticket; the SLA keeps running.';
       $('investigation-options').innerHTML = (ticket.source.investigations || []).filter(i=>i.kind===interactionView).map(i=>`<button class="inquiry-button" data-inquiry="${escape(i.id)}" data-for-ticket="${ticket.id}" data-stage="${ticket.stage || 0}"><strong>${escape(i.label)}</strong><span>${(ticket.evidence||[]).some(e=>e.id===i.id) ? (i.kind==='question'?'Asked':'Completed') : `${investigationSeconds(game,i.kind)}s · ${i.kind==='question'?'ask user':'run check'}`}</span></button>`).join('');
       if (focusedInquiry) $('investigation-options').querySelector(`[data-inquiry="${CSS.escape(focusedInquiry)}"]`)?.focus({preventScroll:true});
       $('case-notes').innerHTML = (ticket.evidence || []).length ? `<h3>CASE NOTES · ${(ticket.evidence || []).length} collected</h3>${ticket.evidence.map(e=>`<article class="evidence-item ${e.kind}"><span class="clue-label">${e.kind==='question'?'USER REPLY':'DIAGNOSTIC RESULT'}</span><p class="evidence-reply">${escape(e.reply)}</p><p class="evidence-fact"><strong>${e.kind==='question'?'Reported detail':'Verified finding'}:</strong> ${escape(e.evidence)}</p></article>`).join('')}` : '<p class="notes-empty">No evidence collected yet. Choose a fix, contact the user, or run a diagnostic.</p>';
@@ -249,13 +249,13 @@ function renderProjects(){
   const risks=game.risks.filter(r=>lifecycleFilter==='resolved'?r.status!=='pending':r.status==='pending');
   $('risk-register').hidden=!isKtlo;$('projects').hidden=isKtlo;
   const focus=document.activeElement?.dataset.project,focusAction=document.activeElement?.dataset.projectAction;
-  const key=JSON.stringify([activeDeskTab,lifecycleFilter,game.projects.map(p=>[p.id,p.status,p.tested,p.held,game.completedNormal>=p.unlockAfter]),risks.map(r=>[r.id,r.status])]);
+  const key=JSON.stringify([activeDeskTab,lifecycleFilter,game.projects.map(p=>[p.id,p.status,p.incidentOutcome,p.tested,p.held,game.completedNormal>=p.unlockAfter]),risks.map(r=>[r.id,r.status])]);
   if($('projects').dataset.key!==key){
     $('projects').dataset.key=key;
     const labels={test:'Run compatibility test',release:'Release verified change',unsafeRelease:'Release without testing',remediate:'Roll back and test',defer:'Defer safely',hold:'Hold project',resume:'Resume project'};
     const button=(p,action)=>`<button data-project="${p.id}" data-project-action="${action}" class="${action==='unsafeRelease'?'risky-project':''}">${labels[action]}${PROJECT_ACTIONS[action]?` · ${projectSeconds(game,action)}s`:''}</button>`;
     const projects=game.projects.filter(p=>lifecycleFilter==='resolved'?closedProject(p):!closedProject(p)&&!!p.held===(lifecycleFilter==='hold'));
-    $('projects').innerHTML=projects.map(p=>{const locked=game.completedNormal<p.unlockAfter,risk=game.risks.find(r=>r.projectId===p.id&&r.status==='pending');const options=locked||closedProject(p)?[]:p.held?['resume']:risk?[]:p.tested?['release','defer','hold']:['test','unsafeRelease','defer','hold'];return `<article class="project-card"><h3>${escape(p.title)}</h3><p>${escape(p.description)}</p><span class="project-state">${locked?`Available after ${p.unlockAfter} routine cases`:p.held?'ON HOLD':p.status==='pending'?(p.tested?'Test passed · ready':'Awaiting testing'):p.status==='released'?'RISK ACTIVE · open KTLO':p.status==='deferred'?'Safely deferred':'Completed'}</span>${p.tested?`<p class="evidence-fact">${escape(p.finding)}</p>`:''}<div class="project-actions">${options.map(a=>button(p,a)).join('')}${risk?'<button data-open-ktlo>Open KTLO prevention task</button>':''}</div></article>`;}).join('');
+    $('projects').innerHTML=projects.map(p=>{const locked=game.completedNormal<p.unlockAfter,risk=game.risks.find(r=>r.projectId===p.id&&r.status==='pending');const options=locked||closedProject(p)?[]:p.held?['resume']:risk?[]:p.tested?['release','defer','hold']:['test','unsafeRelease','defer','hold'];return `<article class="project-card"><h3>${escape(p.title)}</h3><p>${escape(p.description)}</p><span class="project-state">${locked?`Available after ${p.unlockAfter} routine cases`:p.held?'ON HOLD':p.status==='pending'?(p.tested?'Test passed · ready':'Awaiting testing'):p.status==='released'?'RISK ACTIVE · open KTLO':p.status==='deferred'?'Safely deferred':p.incidentId?(p.incidentOutcome==='recovered'?'Incident recovered – release needs retesting':p.incidentOutcome==='handed-off'?'Recovery handed off – restoration pending':'Escalated to INC – recovery required'):'Completed'}</span>${p.tested?`<p class="evidence-fact">${escape(p.finding)}</p>`:''}<div class="project-actions">${options.map(a=>button(p,a)).join('')}${risk?'<button data-open-ktlo>Open KTLO prevention task</button>':''}</div></article>`;}).join('');
     $('risk-register').innerHTML=risks.map(r=>`<article class="risk-card"><strong>${r.status==='pending'?'Incident risk':r.status==='prevented'?'Prevented':'Escalated to INC'} <span data-risk-time="${r.id}"></span></strong><p>${escape(r.cause)}</p>${r.status==='pending'?(r.projectId?`<div class="project-actions">${button(game.projects.find(p=>p.id===r.projectId),'remediate')}</div>`:`<button data-open-case="${r.sourceTicketId}">Correct the originating case</button>`):'<p>This risk is closed. Check INC resolved history for any resulting incident.</p>'}</article>`).join('');
     $('task-empty').hidden=(isKtlo?risks:projects).length>0;$('task-empty').textContent=isKtlo?'No prevention work in this view. Tested projects keep the lights on.':'No projects in this status. Check Active or Hold.';
     if(focus)document.querySelector(`[data-project="${CSS.escape(focus)}"][data-project-action="${CSS.escape(focusAction)}"]`)?.focus({preventScroll:true});
@@ -264,8 +264,9 @@ function renderProjects(){
   $('task-workspace').querySelectorAll('[data-project-action]').forEach(b=>b.disabled=!!game.work||game.status!=='playing');
 }
 function openCase(id){const t=game.queue.find(t=>t.id===id);if(!t)return;activeDeskTab=stream(t);lifecycleFilter=t.held?'hold':'active';tabSelection[activeDeskTab]=id;unread[activeDeskTab].delete(id);selectTicket(game,id);lastQueueKey='';render();}
-function act(index, expected = game?.selected, stage = undefined) {
-  if (game && ['inc','req'].includes(activeDeskTab) && lifecycleFilter!=='resolved' && takeAction(game,index,expected,stage)) { unread[activeDeskTab]?.delete(expected); beep('click'); render(); }
+const visibleActionTicket=()=>['inc','req'].includes(activeDeskTab)&&lifecycleFilter==='active'?Number($('ticket-detail').dataset.selectedTicket)||null:null;
+function act(index, expected = visibleActionTicket(), stage = undefined) {
+  if (game && expected===visibleActionTicket() && expected!==null && takeAction(game,index,expected,stage)) { unread[activeDeskTab]?.delete(expected); beep('click'); render(); }
 }
 function pause() {
   if (!game || game.status !== 'playing') return;
@@ -299,7 +300,7 @@ function finish(quit = false) {
   $('result-breakdown').textContent = `${game.patches} workarounds · ${game.assisted} assists · ${game.missed} missed · ${game.wrong} wrong moves. Morale bonus: +${game.bonus || 0}`;
   $('result-achievements').innerHTML = (game.achievements || []).map(a=>`<div><span>✦</span><strong>${escape(a.title)}</strong><span>+${a.points}</span></div>`).join('');
   $('result-breakdown').textContent += ` Bosses defeated: ${game.bossesDefeated || 0}/2. Incidents: ${game.incidentsResolved} recovered · ${game.incidentsMissed} missed · ${game.incidentsPrevented} prevented. Projects: ${game.projectsCompleted} completed · ${game.projectPoints} pts.`;
-  $('result-tip').textContent = game.patches >= 3 ? 'A workaround can help once, but it does not reset the SLA. Resolve the underlying issue.' : game.missed >= 3 ? 'Sev 3 clocks wait for acknowledgement. Later Sev 1 clocks begin as soon as the incident is reported.' : game.wrong >= 2 ? 'A confident user is not a diagnostic tool. Ask questions or run a check before your next guess.' : 'Tested project releases earn +450. Preventing an active risk earns +400. Recovering a Sev 2 earns a +200 bonus and +10 morale.';
+  $('result-tip').textContent = game.patches >= 3 ? 'A workaround can help once, but it does not reset the SLA. Resolve the underlying issue.' : game.missed >= 3 ? 'Sev 3 clocks wait for acknowledgement. Later Sev 1 clocks begin as soon as the incident is reported.' : game.wrong >= 2 ? 'A confident user is not a diagnostic tool. Ask questions or run a check before your next guess.' : 'Tested project releases earn +450. Correcting a self-created risk avoids impact but earns no bonus. Unsafe-project Sev 2 recovery earns +200; manufactured boss incidents earn no recovery points. Successful recovery restores morale.';
   $('share-status').textContent = ''; $('share-fallback').hidden = true;
   show('results'); $('results').focus({preventScroll:true}); window.scrollTo({top:0,behavior:'instant'}); beep('end');
   document.body.classList.remove('low-morale','final-seconds'); renderLobby();
@@ -313,7 +314,7 @@ $('engineer-class').addEventListener('click',()=>{classId='engineer';renderLobby
 let acknowledgePressed = null;
 $('acknowledge-button').addEventListener('pointerdown',()=>{acknowledgePressed=game?.selected ?? null;});
 $('acknowledge-button').addEventListener('pointercancel',()=>{acknowledgePressed=null;});
-$('acknowledge-button').addEventListener('click',e=>{const expected=e.detail===0 ? game?.selected : acknowledgePressed; acknowledgePressed=null; if(game && expected===game.selected && acknowledgeTicket(game,expected)){handleEvents();render();$('actions').querySelector('button:not([disabled])')?.focus({preventScroll:true});}});
+$('acknowledge-button').addEventListener('click',e=>{const expected=e.detail===0 ? visibleActionTicket() : acknowledgePressed; acknowledgePressed=null; if(game && expected!==null && expected===visibleActionTicket() && expected===game.selected && acknowledgeTicket(game,expected)){handleEvents();render();$('actions').querySelector('button:not([disabled])')?.focus({preventScroll:true});}});
 for (const [id,mode] of [['fix-view-button','fix'],['contact-user-button','question'],['diagnostics-button','diagnostic']]) {
   $(id).addEventListener('click',()=>{ if(game?.status !== 'playing') return; interactionView=mode; lastTicketKey=''; render(); });
 }
@@ -330,7 +331,7 @@ $('queue').addEventListener('click',e=>{const b=e.target.closest('[data-ticket],
 // Bind clicks to the ticket visible at pointer-down; an expiring card cannot redirect the click.
 $('actions').addEventListener('pointerdown',e=>{const b=e.target.closest('[data-for-ticket]');pointerActionTicket=b?.dataset.forTicket ?? null;pointerActionStage=Number(b?.dataset.stage)||undefined;});
 $('actions').addEventListener('pointercancel',()=>{pointerActionTicket=null;pointerActionStage=undefined;});
-$('actions').addEventListener('click',e=>{const button=e.target.closest('[data-action]');if(button){const expected = pointerActionTicket ?? button.dataset.forTicket;const stage=pointerActionStage ?? (Number(button.dataset.stage)||undefined);pointerActionTicket=null;pointerActionStage=undefined;act(Number(button.dataset.action),Number(expected),stage);}});
+$('actions').addEventListener('click',e=>{const button=e.target.closest('[data-action]');if(button){const expected = e.detail===0?button.dataset.forTicket:pointerActionTicket ?? button.dataset.forTicket;const stage=e.detail===0?(Number(button.dataset.stage)||undefined):pointerActionStage ?? (Number(button.dataset.stage)||undefined);pointerActionTicket=null;pointerActionStage=undefined;act(Number(button.dataset.action),Number(expected),stage);}});
 function bindSpecialAction(id, action) {
   let pressed = null;
   const button = $(id);
@@ -352,8 +353,8 @@ document.addEventListener('keydown',e=>{
   if (game?.status==='paused') {if(key==='p'){e.preventDefault();resume();}return;}
   if (game?.status!=='playing') return;
   if (key==='p' || key==='escape') {e.preventDefault();pause();return;}
-  if (key==='a' && ['inc','req'].includes(activeDeskTab) && lifecycleFilter==='active') {e.preventDefault();$('acknowledge-button').click();}
-  if (['inc','req'].includes(activeDeskTab) && lifecycleFilter==='active' && interactionView==='fix' && ['1','2','3'].includes(key)) {e.preventDefault();act(Number(key)-1);}
+  if (key==='a' && visibleActionTicket()!==null) {e.preventDefault();$('acknowledge-button').click();}
+  if (visibleActionTicket()!==null && interactionView==='fix' && ['1','2','3'].includes(key)) {e.preventDefault();act(Number(key)-1);}
   if (key==='q'||key==='e') {e.preventDefault();const list=visibleCases(),index=list.findIndex(t=>t.id===tabSelection[activeDeskTab]);const next=list[(index+(key==='e'?1:-1)+list.length)%list.length];if(next){tabSelection[activeDeskTab]=next.id;if(lifecycleFilter!=='resolved')selectTicket(game,next.id);render();}}
 });
 $('share-button').addEventListener('click',async()=>{

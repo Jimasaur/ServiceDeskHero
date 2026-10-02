@@ -312,7 +312,7 @@ test('preventative remediation cancels an unsafe change risk before any incident
   const project = Engine.PROJECTS[0].id;
   await doProject(page, project, 'unsafeRelease', 2100);
   await doProject(page, project, 'remediate', 18100);
-  expect(Number((await page.locator('#score').innerText()).replaceAll(',', ''))).toBeGreaterThan(0);
+  expect(Number((await page.locator('#score').innerText()).replaceAll(',', ''))).toBe(0);
   await page.clock.fastForward(180000); await assertNoIncidents(page);
   await expect(page.locator('#time')).toHaveText('0 / 14');
   await expect(page.locator('#morale-number')).toHaveText('100%');
