@@ -200,7 +200,7 @@ test('desktop safe projects and twelve routine fixes complete a clean shift with
   const saves = await page.evaluate(() => ({career:JSON.parse(localStorage.getItem('sdh_save_v2')), oldRush:JSON.parse(localStorage.getItem('sdh_rush_v1')), oldShift:JSON.parse(localStorage.getItem('sdh_shift_v2')), contact:JSON.parse(localStorage.getItem('sdh_contact_v3'))}));
   expect(saves.career.tickets).toBe(420); expect(saves.career.lifetimeTickets).toBe(9001);
   expect(saves.oldRush['rush-engineer']).toBe(99999); expect(saves.oldShift['rush-engineer']).toBe(88888);
-  expect(saves.contact['rush-engineer']).toBeGreaterThan(0);
+  expect(saves.contact['dungeon-engineer']).toBeGreaterThan(0);
   await page.locator('#share-button').click(); await expect(page.locator('#share-status')).not.toBeEmpty();
   await page.locator('#replay-button').click();
   await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 14');
