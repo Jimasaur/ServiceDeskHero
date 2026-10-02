@@ -1,4 +1,5 @@
-import { createGame, advance, takeAction, selectTicket, drainEvents, getRank, acknowledgeTicket, TOTAL_NORMAL, ACTIONS, INVESTIGATIONS, investigateTicket, skipIdle, startProject, cancelWork, PROJECT_ACTIONS, setTicketHeld, setProjectHeld } from './rush-engine.js';
+import { createGame, advance, takeAction, selectTicket, drainEvents, getRank, acknowledgeTicket, TOTAL_NORMAL, ACTIONS, INVESTIGATIONS, investigateTicket, skipIdle, startProject, cancelWork, PROJECT_ACTIONS, setTicketHeld, setProjectHeld, DUNGEON_STATS, DUNGEON_SKILLS, DUNGEON_GEAR, DUNGEON_FLOORS, chooseDungeonStat, chooseDungeonSkill, chooseDungeonGear, dungeonSummary, dungeonSnapshot, dungeonEffects, actionSeconds, investigationSeconds, projectSeconds } from './rush-engine.js';
+import { createLife, inboxFor, chooseMessage, endWorkday, homeOptions, chooseEvening, chooseConversation, beginNextDay } from './rush-life.js';
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STORE = 'sdh_contact_v3';
@@ -6,6 +7,7 @@ let today = new Date().toISOString().slice(0,10);
 let dailySeed = `contact-v3-${today}`;
 let saved = {};
 try { const parsed = JSON.parse(localStorage.getItem(STORE) || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) saved = parsed; } catch { /* Storage is optional. */ }
+let life = createLife(), startingStats = {technical:0,insight:0,composure:0,bullshit:0};
 let relaxed = false, classId = 'engineer', game = null, previousTime = 0, lastTicketKey = '', lastQueueKey = '', toastTimer = 0, achievementTimer = 0;
 let interactionView = 'fix', lastCaseId = '';
 let activeDeskTab='inc', lifecycleFilter='active', tabSelection={}, unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()}, pulseUntil={};
@@ -32,14 +34,15 @@ function beep(kind) {
 function formatSla(seconds) { const total=Math.max(0,Math.ceil(seconds)); return `${Math.floor(total/60)}:${String(total%60).padStart(2,'0')}`; }
 function renderSound() { $('sound-button').textContent = sound ? 'Sound on' : 'Sound off'; $('sound-button').setAttribute('aria-pressed', String(sound)); $('sound-button').setAttribute('aria-label', sound ? 'Disable sound' : 'Enable sound'); }
 function renderLobby() {
-  const best = validBest(`${relaxed ? 'easy' : 'rush'}-${classId}`);
+  const best = validBest(`dungeon-${classId}`);
   $('best-label').textContent = `Local best: ${best ? best.toLocaleString() : '—'}`;
+  renderStartingStats();
   $('daily-label').textContent = `DAILY SHIFT · ${today.slice(5).replace('-', '/')}`;
   ['engineer-class','faker-class'].forEach((id,i) => { const selected = (i ? 'faker' : 'engineer') === classId; $(id).classList.toggle('selected',selected); $(id).setAttribute('aria-pressed', String(selected)); });
 
 }
 function show(section) {
-  for (const id of ['lobby','game','results']) $(id).hidden = id !== section;
+  for (const id of ['lobby','game','results','home']) $(id).hidden = id !== section;
   document.body.classList.toggle('playing', section === 'game');
 }
 function announce(text) { $('announcer').textContent = text; }
@@ -76,7 +79,7 @@ function handleEvents() {
       toast(`${label}: ${event.reply}`); addFeed(`${label} recorded for ticket #${event.ticketId}.`);
       announce(`${label}. ${event.reply}. ${event.evidence}`); beep('click');
     } else if (event.type === 'outcome') {
-      const prefix = event.kind === 'fix' ? `+${event.points} · ${event.boss && !event.defeated ? "Stage cleared. " : "Fixed for good. "}` : event.kind === 'patch' ? '+55 · Back in 11s. ' : event.kind === 'assist' ? '+75 · Teamwork. ' : '−10 morale · Try another move. ';
+      const prefix = event.kind === 'fix' ? `+${event.points} · ${event.boss && !event.defeated ? "Stage cleared. " : "Fixed for good. "}` : event.kind === 'patch' ? '+55 · Back in 11s. ' : event.kind === 'assist' ? '+75 · Teamwork. ' : `−${event.penalty ?? 10} morale · Try another move. `;
       toast(prefix + (event.expert?'Efficient diagnosis +25. ':'') + (event.incident?'+10 morale. ':'') + event.text, event.kind === 'wrong');
       addFeed(`${event.title} · ${event.kind === 'fix' ? (event.boss && !event.defeated ? 'stage cleared' : 'resolved') : event.kind === 'patch' ? 'temporarily patched' : event.kind === 'assist' ? 'handled by teammate' : 'still broken'}`,event.kind === 'wrong');
       beep(event.kind); $('score-pop').textContent = event.points ? `+${event.points}` : '';
@@ -94,18 +97,22 @@ function handleEvents() {
       $('chuck-message').textContent = event.phase === 1 ? '“The all-hands meeting is now an all-hands incident.”' : '“One last thing before you go…”';
       announce(event.text);
     } else if (event.type === 'arrival') addFeed(`New ticket · ${event.text}`);
+    else if (['dungeon-floor','dungeon-choice','dungeon-boss','dungeon-xp'].includes(event.type)) {if(event.text){toast(event.text);addFeed(event.text);announce(event.text);}}
     else if (event.type === 'end') finish();
   }
 }
-function start() {
+function start(nextDay = null) {
+  if (!nextDay) life = createLife(`contact-v3-${new Date().toISOString().slice(0,10)}`);
   today = new Date().toISOString().slice(0,10); dailySeed = `contact-v3-${today}`;
-  game = createGame(dailySeed, relaxed, classId); activeDeskTab=stream(game.queue[0]);lifecycleFilter='active';tabSelection={};unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()};pulseUntil={}; $('evidence-drawer').open=false; resultRecorded = false; lastCaseId = ''; interactionView = 'fix'; lastTicketKey = ''; lastQueueKey = ''; feed = []; pointerActionTicket = null;
+  game = createGame(nextDay ? `${dailySeed}-day${life.day}` : dailySeed, relaxed, classId, nextDay ? {day:life.day,dungeonCarry:nextDay.dungeonCarry} : {stats:startingStats,day:1});
+  if(nextDay){game.morale=nextDay.morale;game.assists=nextDay.assists;}  activeDeskTab=stream(game.queue[0]);lifecycleFilter='active';tabSelection={};unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()};pulseUntil={}; $('evidence-drawer').open=false; resultRecorded = false; lastCaseId = ''; interactionView = 'fix'; lastTicketKey = ''; lastQueueKey = ''; feed = []; pointerActionTicket = null;
   $('chuck-message').textContent = '“Welcome, replaceable asset. Your suffering has been marked P3.”';
   clearTimeout(achievementTimer); $('achievement-banner').hidden = true; $('earned-achievements').innerHTML = '';
   $('score-pop').textContent = ''; $('share-status').textContent = ''; $('share-fallback').hidden = true;
   clearTimeout(toastTimer); $('outcome').classList.remove('visible');
-  if ($('pause-dialog').open) $('pause-dialog').close();
+  for(const id of ['pause-dialog','character-dialog','inbox-dialog'])if($(id).open)$(id).close();
   show('game'); previousTime = performance.now(); handleEvents(); unread[activeDeskTab].clear(); render();
+  if(nextDay){nextDay.briefing.forEach(text=>addFeed(text));toast(nextDay.briefing.join(' '));}
   $('acknowledge-button').focus({preventScroll:true}); window.scrollTo({top:0,behavior:'instant'});
   announce('Shift started. Read the user report. Acknowledge to start your 15-minute SLA, then answer directly or contact the user and run diagnostics. New reports arrive every 30 to 120 seconds. Press P to pause.'); beep('start');
 }
@@ -121,7 +128,11 @@ function render() {
   $('morale-meter').setAttribute('aria-valuenow',String(game.morale));
   $('morale-text').textContent = game.morale > 70 ? 'Cautiously optimistic' : game.morale > 35 ? 'The coffee is wearing off' : 'Updating the résumé';
   document.body.classList.toggle('low-morale',game.morale <= 35);
-  $('phase-name').textContent = ['THE TRAINING DESK','INCIDENT RESPONSE','ON CALL · PREVENT INCIDENTS'][game.phase];
+  const floor = DUNGEON_FLOORS.find(f=>f.id===game.dungeon.floor);
+  $('phase-name').textContent = `DAY ${life.day} · ${floor.name.toUpperCase()}`;
+  $('character-button').textContent = `Floor ${game.dungeon.floor} · Lv ${game.dungeon.level}${game.dungeon.statPoints+game.dungeon.skillPoints+game.dungeon.gearChoices?' · UPGRADE':''}`;
+  $('character-button').classList.toggle('upgrade-ready',!!(game.dungeon.statPoints+game.dungeon.skillPoints+game.dungeon.gearChoices));
+  $('inbox-count').textContent=inboxFor(life).filter(m=>!m.answered).length;
   $('shift-flavor').textContent = ['Read first. Acknowledge when ready.','Users have stories. Diagnostics have receipts.','Good testing prevents major incidents.'][game.phase];
   $('open-total').textContent=`${game.queue.length} open`;
   $('next-arrival').textContent=game.nextArrival!==null?`Next report ${formatSla(game.nextArrival-game.time)}`:'All routine reports received';
@@ -173,7 +184,7 @@ function render() {
     lastTicketKey = key;
     if (ticket) {
       $('active-ticket').innerHTML = `<div class="ticket-meta"><span class="pill ${ticket.urgent?'coral':'purple'}">${ticket.boss ? `SEV ${ticket.severity} BOSS · STAGE ${ticket.stage}/2` : ticket.reopened ? `SEV ${ticket.severity} · REOPENED` : `SEV ${ticket.severity} · ${ticket.acknowledged?'ACKNOWLEDGED':'AWAITING ACK'}`}</span><span>TICKET #${String(ticket.id).padStart(4,'0')}</span></div><div class="ticket-category"><span aria-hidden="true">${escape(ticket.source.icon)}</span>${escape(ticket.source.category)}</div><h2 id="ticket-title">${escape(ticket.source.title)}</h2><details class="caller-story"><summary>Caller’s account</summary><p class="user-quote">“${escape(ticket.source.quote)}”</p></details><span class="ticket-user">${escape(ticket.source.user)}</span><div class="clue"><span class="clue-label">REPORTED SYMPTOMS · UNVERIFIED</span><p>${escape(ticket.source.brief || ticket.source.quote)}</p></div>`;
-      $('actions').innerHTML = ticket.actions.map((a,i)=>`<button class="action-button" data-action="${i}" data-for-ticket="${ticket.id}" data-stage="${ticket.stage || 0}" ${a.tried?'disabled':''}><span class="action-number" aria-hidden="true">${i+1}</span><span class="action-label">${escape(a.label)}${a.tried ? (a.kind==='patch' ? ' · used' : ' · tried') : ''}${a.risk?' · creates service risk':''}</span><span class="action-duration">${ACTIONS[a.kind].seconds}s</span></button>`).join('');
+      $('actions').innerHTML = ticket.actions.map((a,i)=>`<button class="action-button" data-action="${i}" data-for-ticket="${ticket.id}" data-stage="${ticket.stage || 0}" ${a.tried?'disabled':''}><span class="action-number" aria-hidden="true">${i+1}</span><span class="action-label">${escape(a.label)}${a.tried ? (a.kind==='patch' ? ' · used' : ' · tried') : ''}${a.risk?' · creates service risk':''}</span><span class="action-duration">${actionSeconds(game,a.kind)}s</span></button>`).join('');
       if (hadActionFocus) { if (ticket.acknowledged) $('actions').querySelector('button:not([disabled])')?.focus({preventScroll:true}); else $('acknowledge-button').focus({preventScroll:true}); }
       const slaAnnouncement = ticket.severity <= 2
         ? `Sev ${ticket.severity}. Your ${ticket.slaSeconds}-second SLA started when reported. ${ticket.acknowledged ? 'Acknowledged; the deadline is unchanged.' : 'Acknowledge to respond; the clock is already running.'}`
@@ -186,7 +197,7 @@ function render() {
       const modes = [['fix-view-button','fix'],['contact-user-button','question'],['diagnostics-button','diagnostic']];
       for (const [id,mode] of modes) { $(id).classList.toggle('selected',interactionView===mode); $(id).setAttribute('aria-pressed',String(interactionView===mode)); }
       $('approach-hint').textContent = interactionView === 'fix' ? 'Know the answer? Fix it now. Questions and diagnostics can reveal every answer. Correct first-try fixes without them earn +25.' : interactionView === 'question' ? 'Ask what actually happened. A confident answer is still only a user report.' : 'Run a targeted check. Facts stay with this ticket; the SLA keeps running.';
-      $('investigation-options').innerHTML = (ticket.source.investigations || []).filter(i=>i.kind===interactionView).map(i=>`<button class="inquiry-button" data-inquiry="${escape(i.id)}" data-for-ticket="${ticket.id}" data-stage="${ticket.stage || 0}"><strong>${escape(i.label)}</strong><span>${(ticket.evidence||[]).some(e=>e.id===i.id) ? (i.kind==='question'?'Asked':'Completed') : `${INVESTIGATIONS[i.kind].seconds}s · ${i.kind==='question'?'ask user':'run check'}`}</span></button>`).join('');
+      $('investigation-options').innerHTML = (ticket.source.investigations || []).filter(i=>i.kind===interactionView).map(i=>`<button class="inquiry-button" data-inquiry="${escape(i.id)}" data-for-ticket="${ticket.id}" data-stage="${ticket.stage || 0}"><strong>${escape(i.label)}</strong><span>${(ticket.evidence||[]).some(e=>e.id===i.id) ? (i.kind==='question'?'Asked':'Completed') : `${investigationSeconds(game,i.kind)}s · ${i.kind==='question'?'ask user':'run check'}`}</span></button>`).join('');
       if (focusedInquiry) $('investigation-options').querySelector(`[data-inquiry="${CSS.escape(focusedInquiry)}"]`)?.focus({preventScroll:true});
       $('case-notes').innerHTML = (ticket.evidence || []).length ? `<h3>CASE NOTES · ${(ticket.evidence || []).length} collected</h3>${ticket.evidence.map(e=>`<article class="evidence-item ${e.kind}"><span class="clue-label">${e.kind==='question'?'USER REPLY':'DIAGNOSTIC RESULT'}</span><p class="evidence-reply">${escape(e.reply)}</p><p class="evidence-fact"><strong>${e.kind==='question'?'Reported detail':'Verified finding'}:</strong> ${escape(e.evidence)}</p></article>`).join('')}` : '<p class="notes-empty">No evidence collected yet. Choose a fix, contact the user, or run a diagnostic.</p>';
     }
@@ -194,12 +205,14 @@ function render() {
   $('actions').querySelectorAll('button').forEach((button,i)=>{button.disabled = !ticket || archived || ticket.held || !ticket.acknowledged || Boolean(game.work) || !!ticket?.actions[i]?.tried || game.status !== 'playing';});
   $('investigation-options').querySelectorAll('button').forEach(button=>{button.disabled = archived || ticket?.held || !ticket?.acknowledged || !!game.work || game.status !== 'playing' || !!ticket?.evidence?.some(e=>e.id===button.dataset.inquiry);});
   if(focusedInquiry && $('investigation-options').querySelector(`[data-inquiry="${CSS.escape(focusedInquiry)}"]`)?.disabled) ($('investigation-options').querySelector('button:not(:disabled)') || $('contact-user-button')).focus({preventScroll:true});
+  $('boss-reaction').hidden=!ticket?.boss || archived;
+  $('boss-reaction').textContent=ticket?.dungeonReaction?.text || ticket?.dungeonReaction || '';
   $('boss-status').hidden = !ticket?.boss || archived;
   document.querySelector('.ticket-panel').classList.toggle('boss-active',Boolean(ticket?.boss));
   if (ticket?.boss) $('boss-status').innerHTML = `<span>TECH SKILL <b>${ticket.techSkill}/10</b></span><span>DIAGNOSIS <b>${ticket.stage}/2</b></span><span class="boss-health">${ticket.stage===1?'▰ ▰':'▱ ▰'}</span>`;
   $('bluff-button').hidden = !(ticket?.boss && classId === 'faker');
   $('bluff-button').disabled = archived || ticket?.held || !ticket?.acknowledged || !!game.work || !!ticket?.bluffed || game.status !== 'playing';
-  $('bluff-description').textContent = ticket?.bluffed ? 'Bluff used. The problem still needs a real fix.' : `Your bluff skill: 4/10 · Boss tech skill: ${ticket?.techSkill || 0}/10 · Buys time, never fixes`;
+  $('bluff-description').textContent = ticket?.bluffed ? 'Bluff used. The problem still needs a real fix.' : `Bluff influence ${5+dungeonEffects(game).bluffPower} · must exceed boss skill ${ticket?.techSkill || 0} · Buys time, never fixes`;
   $('assist-button').disabled = archived || ticket?.held || !ticket?.acknowledged || Boolean(ticket?.boss || ticket?.incident) || !game.assists || Boolean(game.work) || game.status !== 'playing';
   $('assist-count').textContent = ticket?.boss || ticket?.incident ? 'This case needs your expertise' : `${game.assists} left · +75 pts`;
   renderProjects();
@@ -239,7 +252,7 @@ function renderProjects(){
   if($('projects').dataset.key!==key){
     $('projects').dataset.key=key;
     const labels={test:'Run compatibility test',release:'Release verified change',unsafeRelease:'Release without testing',remediate:'Roll back and test',defer:'Defer safely',hold:'Hold project',resume:'Resume project'};
-    const button=(p,action)=>`<button data-project="${p.id}" data-project-action="${action}" class="${action==='unsafeRelease'?'risky-project':''}">${labels[action]}${PROJECT_ACTIONS[action]?` · ${PROJECT_ACTIONS[action]}s`:''}</button>`;
+    const button=(p,action)=>`<button data-project="${p.id}" data-project-action="${action}" class="${action==='unsafeRelease'?'risky-project':''}">${labels[action]}${PROJECT_ACTIONS[action]?` · ${projectSeconds(game,action)}s`:''}</button>`;
     const projects=game.projects.filter(p=>lifecycleFilter==='resolved'?closedProject(p):!closedProject(p)&&!!p.held===(lifecycleFilter==='hold'));
     $('projects').innerHTML=projects.map(p=>{const locked=game.completedNormal<p.unlockAfter,risk=game.risks.find(r=>r.projectId===p.id&&r.status==='pending');const options=locked||closedProject(p)?[]:p.held?['resume']:risk?[]:p.tested?['release','defer','hold']:['test','unsafeRelease','defer','hold'];return `<article class="project-card"><h3>${escape(p.title)}</h3><p>${escape(p.description)}</p><span class="project-state">${locked?`Available after ${p.unlockAfter} routine cases`:p.held?'ON HOLD':p.status==='pending'?(p.tested?'Test passed · ready':'Awaiting testing'):p.status==='released'?'RISK ACTIVE · open KTLO':p.status==='deferred'?'Safely deferred':'Completed'}</span>${p.tested?`<p class="evidence-fact">${escape(p.finding)}</p>`:''}<div class="project-actions">${options.map(a=>button(p,a)).join('')}${risk?'<button data-open-ktlo>Open KTLO prevention task</button>':''}</div></article>`;}).join('');
     $('risk-register').innerHTML=risks.map(r=>`<article class="risk-card"><strong>${r.status==='pending'?'Incident risk':r.status==='prevented'?'Prevented':'Escalated to INC'} <span data-risk-time="${r.id}"></span></strong><p>${escape(r.cause)}</p>${r.status==='pending'?(r.projectId?`<div class="project-actions">${button(game.projects.find(p=>p.id===r.projectId),'remediate')}</div>`:`<button data-open-case="${r.sourceTicketId}">Correct the originating case</button>`):'<p>This risk is closed. Check INC resolved history for any resulting incident.</p>'}</article>`).join('');
@@ -258,7 +271,7 @@ function pause() {
   // Apply time since the previous animation frame before pausing.
   advance(game,Math.max(0,(performance.now()-previousTime)/1000)); handleEvents();
   if (game.status === 'finished') return;
-  game.status = 'paused'; if($('system-dialog').open)$('system-dialog').close(); render(); $('pause-dialog').showModal(); $('resume-button').focus();
+  game.status = 'paused'; for(const id of ['system-dialog','inbox-dialog'])if($(id).open)$(id).close(); render(); $('pause-dialog').showModal(); $('resume-button').focus();
 }
 function resume() {
   if (!game || game.status !== 'paused') return;
@@ -266,17 +279,20 @@ function resume() {
 }
 function finish(quit = false) {
   if (resultRecorded) return;
-  resultRecorded = true; if($('system-dialog').open)$('system-dialog').close();
+  resultRecorded = true; for(const id of ['system-dialog','character-dialog','inbox-dialog'])if($(id).open)$(id).close();
   if (quit) { game.status = 'finished'; game.work = null; game.bonus = 0; }
   if ($('pause-dialog').open) $('pause-dialog').close();
   clearTimeout(toastTimer); $('outcome').classList.remove('visible');
-  const rank = getRank(game), bestKey = `${relaxed ? 'easy' : 'rush'}-${classId}`;
+  const rank = getRank(game), bestKey = `dungeon-${classId}`;
   const isBest = !quit && game.score > validBest(bestKey);
   if (isBest) { saved[bestKey] = game.score; save(); }
   $('result-title').textContent = quit ? 'Clocked out early' : rank.title;
   $('result-line').textContent = quit ? 'Sometimes the correct escalation is a break.' : rank.line;
   $('result-status').textContent = quit ? 'SHIFT ENDED EARLY' : game.morale > 0 ? (game.completion==='practice' ? 'PRACTICE COMPLETE' : 'SHIFT COMPLETE') : 'MORALE HAS LEFT THE CHAT';
-  $('result-mode').textContent = 'FIRST SHIFT';
+  $('result-mode').textContent = `DAY ${life.day} · FLOOR ${game.dungeon.floor}`;
+  endWorkday(life,game);
+  renderDungeonRecap();
+  $('go-home-button').hidden=false;
   $('final-score').textContent = game.score.toLocaleString(); $('new-best').hidden = !isBest;
   $('result-fixed').textContent = game.fixes; $('result-streak').textContent = game.bestStreak; $('result-morale').textContent = `${game.morale}%`;
   $('result-breakdown').textContent = `${game.patches} workarounds · ${game.assisted} assists · ${game.missed} missed · ${game.wrong} wrong moves. Morale bonus: +${game.bonus || 0}`;
@@ -291,7 +307,7 @@ function frame(now) {
   if (game?.status === 'playing') { const dt = Math.max(0,(now-previousTime)/1000); previousTime = now; advance(game,dt); handleEvents(); render(); }
   requestAnimationFrame(frame);
 }
-$('start-button').addEventListener('click',start); $('replay-button').addEventListener('click',start);
+$('start-button').addEventListener('click',()=>start()); $('replay-button').addEventListener('click',()=>start());
 $('engineer-class').addEventListener('click',()=>{classId='engineer';renderLobby();}); $('faker-class').addEventListener('click',()=>{classId='faker';renderLobby();});
 let acknowledgePressed = null;
 $('acknowledge-button').addEventListener('pointerdown',()=>{acknowledgePressed=game?.selected ?? null;});
@@ -330,7 +346,8 @@ document.addEventListener('keydown',e=>{
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
   const key=e.key.toLowerCase();
   if (!$('lobby').hidden && key==='enter' && (e.target===document.body || e.target===$('main'))) {e.preventDefault();start();return;}
-  if ($('system-dialog').open) return;
+  if ($('system-dialog').open || $('character-dialog').open) return;
+  if ($('inbox-dialog').open) {if(key==='p'){e.preventDefault();pause();}return;}
   if (game?.status==='paused') {if(key==='p'){e.preventDefault();resume();}return;}
   if (game?.status!=='playing') return;
   if (key==='p' || key==='escape') {e.preventDefault();pause();return;}
@@ -354,5 +371,88 @@ $('desk-tabs').addEventListener('keydown',e=>{const buttons=[...$('desk-tabs').q
 $('desk-filters').addEventListener('click',e=>{const b=e.target.closest('[data-desk-filter]');if(b){lifecycleFilter=b.dataset.deskFilter;lastTicketKey='';lastQueueKey='';render();}});
 $('system-button').addEventListener('click',()=>{$('system-dialog').showModal();$('close-system-button').focus();});
 $('close-system-button').addEventListener('click',()=>{$('system-dialog').close();$('system-button').focus();});
+
+function renderStartingStats(){
+  const spent=Object.values(startingStats).reduce((a,b)=>a+b,0);
+  $('lobby-stats').innerHTML=DUNGEON_STATS.map(stat=>`<div class="stat-row" data-stat="${stat.key}"><div><strong>${escape(stat.name)}</strong><small>${escape(stat.description)}</small></div><div class="stat-stepper"><button data-start-stat="${stat.key}" data-stat-adjust="-1" aria-label="Remove ${escape(stat.name)} point" ${!startingStats[stat.key]?'disabled':''}>−</button><b data-stat-value>${startingStats[stat.key]}</b><button data-start-stat="${stat.key}" data-stat-adjust="1" aria-label="Add ${escape(stat.name)} point" ${spent>=2?'disabled':''}>+</button></div></div>`).join('');
+  $('lobby-stat-hint').textContent=`${2-spent} starting points available. Spend them now or in your character sheet. Every build can learn every solution.`;
+}
+function renderCharacter(){
+  if(!game)return;
+  const d=game.dungeon, summary=dungeonSummary(game), focused=document.activeElement?.dataset;
+  const focusKey=focused?.levelStat?['levelStat',focused.levelStat]:focused?.skill?['skill',focused.skill]:focused?.gear?['gear',focused.gear]:null;
+  $('dungeon-floor').textContent=`Floor ${d.floor}/3`;$('dungeon-level').textContent=`Level ${d.level}`;$('dungeon-xp').textContent=`${d.xp} XP`;
+  $('character-class').textContent=`${classId==='engineer'?'Root Cause Ranger':'Fake It Till You Make It'} · Day ${life.day}. Build choices carry into later floors and tomorrow. No stat locks a correct fix.`;
+  $('floor-map').innerHTML=DUNGEON_FLOORS.map(f=>`<div class="floor-node ${d.floor===f.id?'current':d.floor>f.id?'cleared':''}" ${d.floor===f.id?'aria-current="step"':''}><span>${f.id}</span><strong>${escape(f.name)}</strong><small>${f.afterNormal===0?'Entry':`${f.afterNormal} routine cases handled`}</small></div>`).join('');
+  $('stat-points').textContent=`${d.statPoints} available`;
+  $('character-stats').innerHTML=DUNGEON_STATS.map(stat=>`<div class="stat-row" data-stat="${stat.key}"><div><strong>${escape(stat.name)}</strong><small>${escape(stat.description)}</small></div><b data-stat-value>${d.stats[stat.key]}</b><button data-level-stat="${stat.key}" ${d.statPoints<=0?'disabled':''} aria-label="Increase ${escape(stat.name)}">+1</button></div>`).join('');
+  $('skill-points').textContent=`${d.skillPoints} available`;
+  $('character-skills').innerHTML=DUNGEON_SKILLS.filter(skill=>skill.classId===classId).map(skill=>{
+    const r=skill.requirements||{}, learned=d.skills.includes(skill.id), parent=r.skillId && !d.skills.includes(r.skillId), excluded=(r.excludes||[]).some(id=>d.skills.includes(id));
+    const unavailable=learned || !d.skillPoints || d.level<(r.level||skill.tier+1) || parent || excluded;
+    const prerequisite=r.skillId?DUNGEON_SKILLS.find(s=>s.id===r.skillId)?.name:null;
+    const why=learned?'Learned':excluded?'Other branch chosen':parent?`Requires ${prerequisite}`:d.level<(r.level||2)?`Unlocks at level ${r.level}`:!d.skillPoints?'No skill points':'Choose permanently';
+    return `<button data-skill="${skill.id}" aria-pressed="${learned}" class="build-card tier-${skill.tier}" ${unavailable?'disabled':''}><span class="card-kicker">TIER ${skill.tier} · ${escape(skill.branch)}</span><strong>${escape(skill.name)}</strong><p>${escape(skill.description)}</p><small>${escape(why)}</small></button>`;
+  }).join('');
+  $('gear-points').textContent=`${d.gearChoices} cache choices`;
+  $('character-gear').innerHTML=DUNGEON_GEAR.map(item=>{
+    const learned=d.gear.includes(item.id), sameFloor=d.gear.some(id=>DUNGEON_GEAR.find(x=>x.id===id)?.floor===item.floor), locked=!d.checkpointsEarned.includes(item.floor), unavailable=learned||sameFloor||locked||!d.gearChoices;
+    return `<button data-gear="${item.id}" aria-pressed="${learned}" class="build-card" ${unavailable?'disabled':''}><span class="card-kicker">FLOOR ${item.floor} CACHE</span><strong>${escape(item.name)}</strong><p>${escape(item.upside)}</p><p class="gear-cost">Cost: ${escape(item.downside)}</p><small>${learned?'Equipped':sameFloor?'Other item chosen':locked?`Reach floor ${item.floor}`:!d.gearChoices?'No cache choice available':'Equip for this run'}</small></button>`;
+  }).join('');
+  const journal=summary.journal||[];
+  const prior=(summary.previousDays||[]).map(day=>day.text).filter(Boolean);
+  $('dungeon-journal').innerHTML=`<p class="build-effects">Current work: fix ${actionSeconds(game,'fix')}s · question ${investigationSeconds(game,'question')}s · diagnostic ${investigationSeconds(game,'diagnostic')}s · test ${projectSeconds(game,'test')}s.</p>${prior.length?`<details><summary>Earlier days</summary>${prior.map(text=>`<p>${escape(text)}</p>`).join('')}</details>`:''}${journal.length?`<ol>${journal.map(entry=>`<li>${escape(typeof entry==='string'?entry:entry.text||entry.description||entry.title)}</li>`).join('')}</ol>`:'<p>Your run starts here. Floor rewards arrive after 4 and 8 routine cases are handled. Asking questions remains a complete path to every answer.</p>'}`;
+  if(focusKey){const [key,value]=focusKey;const selector={'levelStat':'data-level-stat','skill':'data-skill','gear':'data-gear'}[key];const button=$('character-dialog').querySelector(`[${selector}="${CSS.escape(value)}"]`);if(button&&!button.disabled)button.focus({preventScroll:true});else $('close-character-button').focus({preventScroll:true});}
+}
+function openCharacter(){
+  if(!game||game.status!=='playing')return;
+  advance(game,Math.max(0,(performance.now()-previousTime)/1000));handleEvents();
+  if(game.status!=='playing')return;
+  game.status='paused';render();renderCharacter();$('character-dialog').showModal();$('close-character-button').focus();
+}
+function closeCharacter(){
+  if(!$('character-dialog').open)return;
+  $('character-dialog').close();if(game?.status==='paused'){game.status='playing';previousTime=performance.now();render();}$('character-button').focus({preventScroll:true});
+}
+function renderDungeonRecap(){
+  const d=dungeonSummary(game);
+  const names=list=>list.length?list.map(x=>x.name||x.label||x.id||x).join(', '):'None selected';
+  const reactions=(d.bossReactions||[]).map(x=>typeof x==='string'?x:x.text||x.description||'').filter(Boolean);
+  $('dungeon-summary').innerHTML=`<h2>Your run carries on</h2><p>Day ${life.day} · Floor ${d.floor}/3 · Level ${d.level} · ${d.xp} XP</p><p>${DUNGEON_STATS.map(x=>`${escape(x.name)} ${d.stats[x.key]}`).join(' · ')}</p><p><strong>Skills:</strong> ${escape(names(d.skills))}</p><p><strong>Equipment:</strong> ${escape(names(d.gear))}</p>${reactions.length?`<details><summary>How the bosses reacted</summary>${reactions.map(t=>`<p>${escape(t)}</p>`).join('')}</details>`:''}${(d.projectLog||[]).length?`<details><summary>Project decisions</summary>${d.projectLog.map(p=>`<p>${escape(p.text)}</p>`).join('')}</details>`:''}<p>Stats, skills, and equipment stay with you tomorrow. Tonight’s choices add their own consequences. A new run starts fresh.</p>`;
+}
+function renderInbox(){
+  const messages=inboxFor(life);
+  $('inbox-messages').innerHTML=messages.map(m=>`<article class="message-card"><div class="card-kicker">${escape(m.channel)} · ${escape(m.from)}</div><h3>${escape(m.subject)}</h3><p>${escape(m.body)}</p>${m.answered?`<p class="message-reply">${escape(m.reply)}</p>`:`<div class="message-choices">${m.choices.map(c=>`<button data-message="${m.id}" data-message-choice="${c.id}"><strong>${escape(c.label)}</strong><small>${escape(c.effect)}</small></button>`).join('')}</div>`}</article>`).join('');
+  $('inbox-count').textContent=messages.filter(m=>!m.answered).length;
+}
+function renderHome(){
+  const options=homeOptions(life);
+  $('home-title').textContent=`Day ${life.day}: you made it home.`;
+  $('home-intro').textContent=life.workSummary?.handedOff?`You handed ${life.workSummary.handedOff} unresolved case${life.workSummary.handedOff===1?'':'s'} to the next shift. The extra coordination adds stress that carries into tomorrow. At home, Packet has filed a ticket against gravity.`:'The workday is over. Packet has filed a ticket against gravity. You are not on call for this one.';
+  $('home-relationships').innerHTML=`<span>Energy <b>${life.energy}</b></span><span>Stress <b>${life.stress}</b></span><span>Rowan <b>${life.relationships.rowan}</b></span><span>Mira <b>${life.relationships.mira}</b></span><span>Packet <b>${life.relationships.packet}</b></span>`;
+  $('evening-options').innerHTML=options.activities.map(c=>`<button data-evening="${c.id}" class="life-choice" ${options.activityResult?'disabled':''}><strong>${escape(c.label)}</strong><p>${escape(c.description)}</p><small>${escape(c.effect)}</small></button>`).join('');
+  $('evening-result').textContent=options.activityResult||'';
+  const c=options.conversation;
+  $('conversation-title').textContent=c.title;$('conversation-context').textContent=c.context;$('conversation-prompt').textContent=c.prompt;
+  $('conversation-options').innerHTML=c.choices.map(choice=>`<button data-conversation="${choice.id}" class="life-choice" ${!options.activityResult||options.conversationResult?'disabled':''}><strong>${escape(choice.label)}</strong><small>${escape(choice.effect)}</small></button>`).join('');
+  $('conversation-result').textContent=options.conversationResult||'';
+  $('next-day-button').disabled=life.stage!=='ready';
+  $('next-day-button').textContent=`Begin day ${life.day+1}`;
+  $('tomorrow-preview').textContent=life.stage==='ready'?'Tomorrow keeps your build. Energy, stress, and trust shape your opening morale and teammate support. See the morning inbox for the other side of tonight.':'Choose one evening activity, then respond to Rowan. Neither work nor perfect answers are required to continue.';
+}
+$('lobby-stats').addEventListener('click',e=>{const b=e.target.closest('[data-start-stat]');if(!b)return;const key=b.dataset.startStat,adjust=Number(b.dataset.statAdjust),spent=Object.values(startingStats).reduce((a,v)=>a+v,0);if((adjust===1&&spent<2)||(adjust===-1&&startingStats[key]>0)){startingStats[key]+=adjust;renderStartingStats();$('lobby-stats').querySelector(`[data-start-stat="${key}"][data-stat-adjust="${adjust}"]:not(:disabled)`)?.focus();}});
+$('character-button').addEventListener('click',openCharacter);
+$('close-character-button').addEventListener('click',closeCharacter);
+$('character-dialog').addEventListener('cancel',e=>{e.preventDefault();closeCharacter();});
+$('character-dialog').addEventListener('click',e=>{const b=e.target.closest('[data-level-stat],[data-skill],[data-gear]');if(!b||!game)return;const ok=b.dataset.levelStat?chooseDungeonStat(game,b.dataset.levelStat):b.dataset.skill?chooseDungeonSkill(game,b.dataset.skill):chooseDungeonGear(game,b.dataset.gear);if(ok){handleEvents();lastTicketKey='';$('projects').dataset.key='';renderCharacter();render();}});
+$('inbox-button').addEventListener('click',()=>{if(game?.status!=='playing')return;renderInbox();$('inbox-result').textContent='';$('inbox-dialog').showModal();$('close-inbox-button').focus();});
+$('close-inbox-button').addEventListener('click',()=>{$('inbox-dialog').close();$('inbox-button').focus();});
+$('inbox-dialog').addEventListener('close',()=>{if(game?.status==='playing')$('inbox-button').focus({preventScroll:true});});
+$('inbox-messages').addEventListener('click',e=>{const b=e.target.closest('[data-message-choice]');if(!b||!game||game.status!=='playing')return;if(chooseMessage(life,b.dataset.message,b.dataset.messageChoice)){const result=life.lastResult;game.morale=Math.max(0,Math.min(100,game.morale+result.moraleDelta));game.assists=Math.max(0,Math.min(4,game.assists+result.assistsDelta));renderInbox();$('inbox-result').textContent=result.text+(result.clue?` ${result.clue}`:'');addFeed(result.text);render();$('close-inbox-button').focus({preventScroll:true});}});
+$('go-home-button').addEventListener('click',()=>{renderHome();show('home');$('home').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});});
+$('evening-options').addEventListener('click',e=>{const b=e.target.closest('[data-evening]');if(b&&chooseEvening(life,b.dataset.evening)){renderHome();$('conversation-options').querySelector('button:not(:disabled)')?.focus({preventScroll:true});}});
+$('conversation-options').addEventListener('click',e=>{const b=e.target.closest('[data-conversation]');if(b&&chooseConversation(life,b.dataset.conversation)){renderHome();$('next-day-button').focus({preventScroll:true});}});
+$('next-day-button').addEventListener('click',()=>{const carriedBuild=dungeonSnapshot(game),carry=beginNextDay(life);if(carry)start({...carry,dungeonCarry:carriedBuild});});
+$('home-menu-button').addEventListener('click',()=>{show('lobby');game=null;renderLobby();$('start-button').focus();});
 
 renderLobby();renderSound();requestAnimationFrame(frame);

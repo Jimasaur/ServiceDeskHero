@@ -1,4 +1,4 @@
-# First Shift playtest checklist
+# Office Dungeon playtest checklist
 
 This release is a development playtest, not a marketing launch. No advertising, analytics, payment flow, new backend, or account/security changes are included.
 
@@ -30,7 +30,7 @@ The pre-Rush main baseline is `f01fdfa90a0d1fb10e740b6f9a96d0aa985b905b` (tree `
 
 - No online leaderboard or anti-cheat; scores are local and shareable as text
 - A round is not saved across a page refresh; best scores are saved when storage is available
-- Five achievements, twelve normal tickets, two projects, optional causal incidents, and two two-stage bosses form the first playable content set
+- Three work floors, twelve normal tickets, two projects, optional causal incidents, two two-stage bosses, two class trees, equipment caches, and authored home/inbox choices form the playable slice
 - Career mode is preserved rather than rebalanced in this pass
 
 ## Contact and prevention acceptance
@@ -42,3 +42,17 @@ The pre-Rush main baseline is `f01fdfa90a0d1fb10e740b6f9a96d0aa985b905b` (tree `
 - Unsafe change → visible cause and prevention window → first 180s Sev 2 → explicit recovery reward
 - Projects compete for the same worker; interruption, pause, duplicate clicks and replay remain safe
 - No onsite/dispatch UI yet: authored location hooks are reserved for a future pass
+
+## Dungeon and life-loop acceptance
+
+- Starting allocation allows 0–2 spent points; unspent points remain usable in Character
+- Floor 2/3 rewards occur once per run; all branches and all stat specialists can finish by asking questions or using known answers
+- Class branches/evolutions and one gear choice per cache enforce mutual exclusion, and each real effect matches its description
+- Character modal pauses arrivals, SLAs, risk clocks, and unfinished work; Close/Escape resumes once with focus restored
+- Inbox retains running clocks, blocks gameplay shortcuts, and P opens Pause safely
+- Boss reactions and project decisions appear in the final recap; build and history carry into later days
+- Every activity and conversational response can reach the next morning, including repair and imperfect choices
+- Seeded unknown audits reveal once the following morning and name their earlier cause; starts remain bounded and recoverable
+- Leaving early records a handoff cost; completely cleared days have no handoff penalty
+- Desktop, 320px phone, and short-landscape game/dialog layouts fit the viewport with contained scrolling
+- Career saves and earlier score records remain intact; no live AI, external workplace messaging, or paid service is involved
