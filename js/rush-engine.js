@@ -5,7 +5,7 @@ export { PROJECTS, PROJECT_ACTIONS } from './rush-projects.js';
 import { BOSSES } from './rush-bosses.js';
 export { BOSSES } from './rush-bosses.js';
 import {createDungeon, progressDungeon, gainDungeonXP, dungeonEffects, scaledDungeonSeconds, dungeonMoraleLoss, recordDungeonProject, dungeonBossReaction, finishDungeon} from './rush-dungeon.js';
-export {DUNGEON_STATS, DUNGEON_SKILLS, DUNGEON_GEAR, DUNGEON_FLOORS, chooseDungeonStat, chooseDungeonSkill, chooseDungeonGear, dungeonSummary, dungeonSnapshot, dungeonEffects, dungeonMoraleLoss} from './rush-dungeon.js';
+export {DUNGEON_STATS, DUNGEON_SKILLS, DUNGEON_GEAR, DUNGEON_FLOORS, chooseDungeonStat, chooseDungeonSkill, chooseDungeonGear, dungeonSummary, dungeonSnapshot, finishDungeon, dungeonEffects, dungeonMoraleLoss} from './rush-dungeon.js';
 export const TOTAL_NORMAL = 12;
 export const SLA_SECONDS = Object.freeze({ 3: 15 * 60, 2: 180, 1: 60 });
 export const ARRIVAL_SECONDS = Object.freeze({ min: 30, max: 120 });
@@ -252,7 +252,7 @@ export function takeAction(g, index, expectedTicketId = g.selected, expectedStag
   if (!action || action.tried || !Object.hasOwn(ACTIONS, action.kind) || (action.kind === 'patch' && ticket.patchUsed)) return false;
   if (action.kind === 'assist') g.assists--;
   if (action.kind === 'bluff') { ticket.bluffed = true; g.bluffs++; }
-  g.work = { ticketId: ticket.id, stage: ticket.stage, action, started: g.time, ends: tickTime(g.time + actionSeconds(g,action.kind)) };
+  g.work = { ticketId: ticket.id, stage: ticket.stage, action, effects:dungeonEffects(g), moralePenalty:dungeonMoraleLoss(g,10), bossReward:ticket.dungeonReaction?{stageBonus:ticket.dungeonReaction.stageBonus,recovery:ticket.dungeonReaction.recovery}:null, started: g.time, ends: tickTime(g.time + actionSeconds(g,action.kind)) };
   emit(g, 'work', { kind: action.kind });
   return true;
 }
@@ -290,7 +290,7 @@ export function startProject(g,id,action) {
   if(!Object.hasOwn(PROJECT_ACTIONS,action)) return false;
   if(action==='remediate' ? !risk : project.status!=='pending') return false;
   if(action==='test' && project.tested || action==='release' && !project.tested || action==='unsafeRelease' && project.tested) return false;
-  g.work={type:'project',projectId:id,projectAction:action,action:{kind:'project',label:project.title},started:g.time,ends:tickTime(g.time+projectSeconds(g,action))};
+  g.work={type:'project',projectId:id,projectAction:action,action:{kind:'project',label:project.title},effects:dungeonEffects(g),started:g.time,ends:tickTime(g.time+projectSeconds(g,action))};
   return true;
 }
 export function cancelWork(g) {
@@ -308,12 +308,12 @@ function completeProject(g,work) {
     const risk=g.risks.find(r=>r.projectId===project.id&&r.status==='pending');
     if(risk) {preventRisk(g,risk);project.status='completed';project.releaseMethod='remediated';g.projectsCompleted++;recordDungeonProject(g,project,action);}
     else emit(g,'project',{text:'The incident was reported before the preventative test finished. Resolve it in the ticket queue.'});
-  } else {const points=450+dungeonEffects(g).testedBonus;project.status='completed';project.releaseMethod='tested';g.projectsCompleted++;g.score+=points;g.projectPoints+=points;recordDungeonProject(g,project,action);emit(g,'project',{text:`${project.title} shipped safely. +${points} points. Testing kept the department working.`});}
+  } else {const points=450+work.effects.testedBonus;project.status='completed';project.releaseMethod='tested';g.projectsCompleted++;g.score+=points;g.projectPoints+=points;recordDungeonProject(g,project,action);emit(g,'project',{text:`${project.title} shipped safely. +${points} points. Testing kept the department working.`});}
 }
 
-function completeBluff(g, ticket) {
-  const effects=dungeonEffects(g),influence=5+effects.bluffPower,success = ticket.techSkill < influence;
-  let points = 0;const seconds=10+effects.bluffSeconds,recovery=10+effects.bluffRecovery,penalty=dungeonMoraleLoss(g,10);
+function completeBluff(g, ticket, work) {
+  const effects=work.effects,influence=5+effects.bluffPower,success = ticket.techSkill < influence;
+  let points = 0;const seconds=10+effects.bluffSeconds,recovery=10+effects.bluffRecovery,penalty=work.moralePenalty;
   if (success) {
     ticket.deadline = tickTime(ticket.deadline + seconds); ticket.patience += seconds;
     g.morale = Math.min(100, g.morale + recovery); points = ACTIONS.bluff.points+effects.bluffBonus; g.score += points;
@@ -340,17 +340,17 @@ function completeWork(g) {
     return;
   }
   const kind = work.action.kind;
-  if (kind === 'bluff') { completeBluff(g, ticket); return; }
+  if (kind === 'bluff') { completeBluff(g, ticket, work); return; }
   const completedStage = ticket.stage, completedTitle = ticket.source.title;
   let points = 0, penalty = 0, defeated = false, closed = false;
   if (kind === 'wrong') {
-    penalty=dungeonMoraleLoss(g,10);g.wrong++; ticket.mistakes++; g.streak = 0; g.morale = Math.max(0, g.morale - penalty);
+    penalty=work.moralePenalty;g.wrong++; ticket.mistakes++; g.streak = 0; g.morale = Math.max(0, g.morale - penalty);
     ticket.actions = ticket.actions.map(a => a === work.action ? { ...a, tried: true } : a);
     if (work.action.risk) addRisk(g, {...work.action.risk, cause:`Ticket #${ticket.id}: ${work.action.label}. ${work.action.risk.cause}`, sourceTicketId:ticket.id});
   } else if (kind === 'fix') {
     g.streak++; g.bestStreak = Math.max(g.bestStreak, g.streak);
     points = ACTIONS.fix.points + CLASSES[g.classId].fixBonus + Math.min(5, g.streak - 1) * 25 + (ticket.urgent && !ticket.boss ? 50 : 0);
-    g.morale = Math.min(100, g.morale + (ticket.incident ? 10 : 4)+dungeonEffects(g).recovery);
+    g.morale = Math.min(100, g.morale + (ticket.incident ? 10 : 4)+work.effects.recovery);
     if (ticket.incident) points = ticket.severity === 2 ? 200 : 300;
     else if (!ticket.inquiryCount && !ticket.mistakes && !ticket.patchUsed) points += 25;
     // Correcting the offending case before its risk matures prevents the major incident.
@@ -358,7 +358,7 @@ function completeWork(g) {
     if (ticket.boss) {
       g.bossStagesCleared++;
       gainDungeonXP(g,`boss-${ticket.bossId}-stage-${ticket.stage}`,40,`${ticket.source.title}: stage cleared`);
-      if(ticket.dungeonReaction){points+=ticket.dungeonReaction.stageBonus;g.morale=Math.min(100,g.morale+ticket.dungeonReaction.recovery);}
+      if(work.bossReward){points+=work.bossReward.stageBonus;g.morale=Math.min(100,g.morale+work.bossReward.recovery);}
       const boss = BOSSES.find(b => b.id === ticket.bossId);
       if (ticket.stage < boss.stages.length) {
         ticket.stage++; ticket.source = boss.stages[ticket.stage - 1]; ticket.actions = actionsFor(ticket.source, g.random); ticket.evidence = [];

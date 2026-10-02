@@ -277,6 +277,14 @@ test('320px fictional inbox keeps its clock contract, grants one assist, and rem
   await expect(page.locator('#outcome')).toContainText(/backed Mira’s claim before the evidence arrived/i);
   await expect(page.locator('#assist-count')).toContainText(/(2|4) left/);
   await page.screenshot({path:testInfo.outputPath('delayed-morning-consequence.png'), fullPage:true});
+  await page.clock.fastForward(5000);
+  await page.locator('#inbox-button').click();
+  await expect(page.locator('[data-morning-briefing]')).toContainText(/audit (confirms|contradicts) it/i);
+  await expect(page.locator('[data-morning-briefing]')).toContainText(/backed Mira’s claim before the evidence arrived/i);
+  await expect(page.locator('[data-morning-briefing]')).toContainText(/starting morale|start with/i);
+  await expect(page.locator('[data-morning-briefing]')).toContainText(/early clock-out/i);
+  await page.screenshot({path:testInfo.outputPath('persistent-morning-briefing.png'), fullPage:true});
+  await page.locator('#close-inbox-button').click();
   await assertCompactViewport(page);
   expect(errors).toEqual([]);
 });

@@ -1,4 +1,4 @@
-import { createGame, advance, takeAction, selectTicket, drainEvents, getRank, acknowledgeTicket, TOTAL_NORMAL, ACTIONS, INVESTIGATIONS, investigateTicket, skipIdle, startProject, cancelWork, PROJECT_ACTIONS, setTicketHeld, setProjectHeld, DUNGEON_STATS, DUNGEON_SKILLS, DUNGEON_GEAR, DUNGEON_FLOORS, chooseDungeonStat, chooseDungeonSkill, chooseDungeonGear, dungeonSummary, dungeonSnapshot, dungeonEffects, actionSeconds, investigationSeconds, projectSeconds } from './rush-engine.js';
+import { createGame, advance, takeAction, selectTicket, drainEvents, getRank, acknowledgeTicket, TOTAL_NORMAL, ACTIONS, INVESTIGATIONS, investigateTicket, skipIdle, startProject, cancelWork, PROJECT_ACTIONS, setTicketHeld, setProjectHeld, DUNGEON_STATS, DUNGEON_SKILLS, DUNGEON_GEAR, DUNGEON_FLOORS, chooseDungeonStat, chooseDungeonSkill, chooseDungeonGear, dungeonSummary, dungeonSnapshot, dungeonEffects, finishDungeon, actionSeconds, investigationSeconds, projectSeconds } from './rush-engine.js';
 import { createLife, inboxFor, chooseMessage, endWorkday, homeOptions, chooseEvening, chooseConversation, beginNextDay } from './rush-life.js';
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -7,7 +7,7 @@ let today = new Date().toISOString().slice(0,10);
 let dailySeed = `contact-v3-${today}`;
 let saved = {};
 try { const parsed = JSON.parse(localStorage.getItem(STORE) || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) saved = parsed; } catch { /* Storage is optional. */ }
-let life = createLife(), startingStats = {technical:0,insight:0,composure:0,bullshit:0};
+let morningBriefing = [], life = createLife(), startingStats = {technical:0,insight:0,composure:0,bullshit:0};
 let relaxed = false, classId = 'engineer', game = null, previousTime = 0, lastTicketKey = '', lastQueueKey = '', toastTimer = 0, achievementTimer = 0;
 let interactionView = 'fix', lastCaseId = '';
 let activeDeskTab='inc', lifecycleFilter='active', tabSelection={}, unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()}, pulseUntil={};
@@ -102,6 +102,7 @@ function handleEvents() {
   }
 }
 function start(nextDay = null) {
+  morningBriefing = nextDay?.briefing ? [...nextDay.briefing] : [];
   if (!nextDay) life = createLife(`contact-v3-${new Date().toISOString().slice(0,10)}`);
   today = new Date().toISOString().slice(0,10); dailySeed = `contact-v3-${today}`;
   game = createGame(nextDay ? `${dailySeed}-day${life.day}` : dailySeed, relaxed, classId, nextDay ? {day:life.day,dungeonCarry:nextDay.dungeonCarry} : {stats:startingStats,day:1});
@@ -280,7 +281,7 @@ function resume() {
 function finish(quit = false) {
   if (resultRecorded) return;
   resultRecorded = true; for(const id of ['system-dialog','character-dialog','inbox-dialog'])if($(id).open)$(id).close();
-  if (quit) { game.status = 'finished'; game.work = null; game.bonus = 0; }
+  if (quit) { game.status = 'finished'; game.work = null; game.bonus = 0; finishDungeon(game); }
   if ($('pause-dialog').open) $('pause-dialog').close();
   clearTimeout(toastTimer); $('outcome').classList.remove('visible');
   const rank = getRank(game), bestKey = `dungeon-${classId}`;
@@ -387,13 +388,15 @@ function renderCharacter(){
   $('stat-points').textContent=`${d.statPoints} available`;
   $('character-stats').innerHTML=DUNGEON_STATS.map(stat=>`<div class="stat-row" data-stat="${stat.key}"><div><strong>${escape(stat.name)}</strong><small>${escape(stat.description)}</small></div><b data-stat-value>${d.stats[stat.key]}</b><button data-level-stat="${stat.key}" ${d.statPoints<=0?'disabled':''} aria-label="Increase ${escape(stat.name)}">+1</button></div>`).join('');
   $('skill-points').textContent=`${d.skillPoints} available`;
-  $('character-skills').innerHTML=DUNGEON_SKILLS.filter(skill=>skill.classId===classId).map(skill=>{
+  const skillMarkup=skill=>{
     const r=skill.requirements||{}, learned=d.skills.includes(skill.id), parent=r.skillId && !d.skills.includes(r.skillId), excluded=(r.excludes||[]).some(id=>d.skills.includes(id));
     const unavailable=learned || !d.skillPoints || d.level<(r.level||skill.tier+1) || parent || excluded;
     const prerequisite=r.skillId?DUNGEON_SKILLS.find(s=>s.id===r.skillId)?.name:null;
     const why=learned?'Learned':excluded?'Other branch chosen':parent?`Requires ${prerequisite}`:d.level<(r.level||2)?`Unlocks at level ${r.level}`:!d.skillPoints?'No skill points':'Choose permanently';
     return `<button data-skill="${skill.id}" aria-pressed="${learned}" class="build-card tier-${skill.tier}" ${unavailable?'disabled':''}><span class="card-kicker">TIER ${skill.tier} · ${escape(skill.branch)}</span><strong>${escape(skill.name)}</strong><p>${escape(skill.description)}</p><small>${escape(why)}</small></button>`;
-  }).join('');
+  };
+  const classSkills=DUNGEON_SKILLS.filter(skill=>skill.classId===classId);
+  $('character-skills').innerHTML=[...new Set(classSkills.map(skill=>skill.branch))].map(branch=>`<div class="skill-branch"><h4>${escape(branch)} branch</h4>${classSkills.filter(skill=>skill.branch===branch).map(skillMarkup).join('')}</div>`).join('');
   $('gear-points').textContent=`${d.gearChoices} cache choices`;
   $('character-gear').innerHTML=DUNGEON_GEAR.map(item=>{
     const learned=d.gear.includes(item.id), sameFloor=d.gear.some(id=>DUNGEON_GEAR.find(x=>x.id===id)?.floor===item.floor), locked=!d.checkpointsEarned.includes(item.floor), unavailable=learned||sameFloor||locked||!d.gearChoices;
@@ -422,19 +425,19 @@ function renderDungeonRecap(){
 }
 function renderInbox(){
   const messages=inboxFor(life);
-  $('inbox-messages').innerHTML=messages.map(m=>`<article class="message-card"><div class="card-kicker">${escape(m.channel)} · ${escape(m.from)}</div><h3>${escape(m.subject)}</h3><p>${escape(m.body)}</p>${m.answered?`<p class="message-reply">${escape(m.reply)}</p>`:`<div class="message-choices">${m.choices.map(c=>`<button data-message="${m.id}" data-message-choice="${c.id}"><strong>${escape(c.label)}</strong><small>${escape(c.effect)}</small></button>`).join('')}</div>`}</article>`).join('');
+  $('inbox-messages').innerHTML=(morningBriefing.length?`<section class="message-card morning-briefing" data-morning-briefing><div class="card-kicker">DAY ${life.day} · WHAT CARRIED FORWARD</div><h3>Morning briefing</h3><ul>${morningBriefing.map(text=>`<li>${escape(text)}</li>`).join('')}</ul></section>`:'')+messages.map(m=>`<article class="message-card"><div class="card-kicker">${escape(m.channel)} · ${escape(m.from)}</div><h3>${escape(m.subject)}</h3><p>${escape(m.body)}</p>${m.answered?`<p class="message-reply">${escape(m.reply)}</p>`:`<div class="message-choices">${m.choices.map(c=>`<button data-message="${m.id}" data-message-choice="${c.id}"><strong>${escape(c.label)}</strong><small>${escape(c.effect)}</small></button>`).join('')}</div>`}</article>`).join('');
   $('inbox-count').textContent=messages.filter(m=>!m.answered).length;
 }
 function renderHome(){
   const options=homeOptions(life);
   $('home-title').textContent=`Day ${life.day}: you made it home.`;
-  $('home-intro').textContent=life.workSummary?.handedOff?`You handed ${life.workSummary.handedOff} unresolved case${life.workSummary.handedOff===1?'':'s'} to the next shift. The extra coordination adds stress that carries into tomorrow. At home, Packet has filed a ticket against gravity.`:'The workday is over. Packet has filed a ticket against gravity. You are not on call for this one.';
+  $('home-intro').textContent=options.homeIntro;
   $('home-relationships').innerHTML=`<span>Energy <b>${life.energy}</b></span><span>Stress <b>${life.stress}</b></span><span>Rowan <b>${life.relationships.rowan}</b></span><span>Mira <b>${life.relationships.mira}</b></span><span>Packet <b>${life.relationships.packet}</b></span>`;
-  $('evening-options').innerHTML=options.activities.map(c=>`<button data-evening="${c.id}" class="life-choice" ${options.activityResult?'disabled':''}><strong>${escape(c.label)}</strong><p>${escape(c.description)}</p><small>${escape(c.effect)}</small></button>`).join('');
+  $('evening-options').innerHTML=options.activities.map(c=>`<button data-evening="${c.id}" aria-pressed="${life.choices.evening===c.id}" class="life-choice" ${options.activityResult?'disabled':''}><strong>${escape(c.label)}</strong><p>${escape(c.description)}</p><small>${escape(c.effect)}</small></button>`).join('');
   $('evening-result').textContent=options.activityResult||'';
   const c=options.conversation;
   $('conversation-title').textContent=c.title;$('conversation-context').textContent=c.context;$('conversation-prompt').textContent=c.prompt;
-  $('conversation-options').innerHTML=c.choices.map(choice=>`<button data-conversation="${choice.id}" class="life-choice" ${!options.activityResult||options.conversationResult?'disabled':''}><strong>${escape(choice.label)}</strong><small>${escape(choice.effect)}</small></button>`).join('');
+  $('conversation-options').innerHTML=c.choices.map(choice=>`<button data-conversation="${choice.id}" aria-pressed="${life.choices.conversation===choice.id}" class="life-choice" ${!options.activityResult||options.conversationResult?'disabled':''}><strong>${escape(choice.label)}</strong><small>${escape(choice.effect)}</small></button>`).join('');
   $('conversation-result').textContent=options.conversationResult||'';
   $('next-day-button').disabled=life.stage!=='ready';
   $('next-day-button').textContent=`Begin day ${life.day+1}`;
@@ -448,7 +451,7 @@ $('character-dialog').addEventListener('click',e=>{const b=e.target.closest('[da
 $('inbox-button').addEventListener('click',()=>{if(game?.status!=='playing')return;renderInbox();$('inbox-result').textContent='';$('inbox-dialog').showModal();$('close-inbox-button').focus();});
 $('close-inbox-button').addEventListener('click',()=>{$('inbox-dialog').close();$('inbox-button').focus();});
 $('inbox-dialog').addEventListener('close',()=>{if(game?.status==='playing')$('inbox-button').focus({preventScroll:true});});
-$('inbox-messages').addEventListener('click',e=>{const b=e.target.closest('[data-message-choice]');if(!b||!game||game.status!=='playing')return;if(chooseMessage(life,b.dataset.message,b.dataset.messageChoice)){const result=life.lastResult;game.morale=Math.max(0,Math.min(100,game.morale+result.moraleDelta));game.assists=Math.max(0,Math.min(4,game.assists+result.assistsDelta));renderInbox();$('inbox-result').textContent=result.text+(result.clue?` ${result.clue}`:'');addFeed(result.text);render();$('close-inbox-button').focus({preventScroll:true});}});
+$('inbox-messages').addEventListener('click',e=>{const b=e.target.closest('[data-message-choice]');if(!b||!game||game.status!=='playing')return;if(chooseMessage(life,b.dataset.message,b.dataset.messageChoice)){const result=life.lastResult;game.morale=Math.max(0,Math.min(100,game.morale+result.moraleDelta));game.assists=Math.max(0,Math.min(4,game.assists+result.assistsDelta));renderInbox();$('inbox-result').textContent=result.text;addFeed(result.text);render();$('close-inbox-button').focus({preventScroll:true});}});
 $('go-home-button').addEventListener('click',()=>{renderHome();show('home');$('home').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});});
 $('evening-options').addEventListener('click',e=>{const b=e.target.closest('[data-evening]');if(b&&chooseEvening(life,b.dataset.evening)){renderHome();$('conversation-options').querySelector('button:not(:disabled)')?.focus({preventScroll:true});}});
 $('conversation-options').addEventListener('click',e=>{const b=e.target.closest('[data-conversation]');if(b&&chooseConversation(life,b.dataset.conversation)){renderHome();$('next-day-button').focus({preventScroll:true});}});

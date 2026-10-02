@@ -53,16 +53,22 @@ function initialStats(input) {
 const integer = (value,min,max,fallback=min) => Number.isInteger(value)&&value>=min&&value<=max?value:fallback;
 export function createDungeon(options={},classId='engineer') {
   const carry=options.dungeonCarry;
+  if(carry!==undefined&&(!carry||typeof carry!=='object'||Array.isArray(carry)))throw new RangeError('A carried character must be a dungeon snapshot.');
   const d={floor:1,level:1,xp:0,statPoints:0,skillPoints:0,gearChoices:0,stats:initialStats(carry?undefined:options.stats),skills:[],gear:[],gearFloors:[],journal:[],projectLog:[],bossReactions:[],checkpointsEarned:[],xpKeys:[],cleared:false,recap:null,previousDays:[],day:integer(options.day,1,100000,1),configured:options.stats!==undefined};
   d.initialStatBudget=options.stats===undefined?0:2;
   d.statPoints=d.initialStatBudget-Object.values(d.stats).reduce((a,b)=>a+b,0);
   d.configured=options.stats!==undefined;
   if(carry && typeof carry==='object') {
-    d.stats=Object.fromEntries(DUNGEON_STATS.map(s=>[s.key,integer(carry.stats?.[s.key],0,4)]));
-    if(Object.values(d.stats).reduce((a,b)=>a+b,0)>4) throw new RangeError('A carried character cannot exceed four allocated stat points.');
+    const stats=carry.stats===undefined?{}:carry.stats;
+    if(!stats||typeof stats!=='object'||Array.isArray(stats)||Object.keys(stats).some(key=>!DUNGEON_STATS.some(s=>s.key===key)))throw new RangeError('Carried stats must contain only the four known attributes.');
+    d.stats=Object.fromEntries(DUNGEON_STATS.map(s=>[s.key,Object.hasOwn(stats,s.key)?stats[s.key]:0]));
+    if(Object.values(d.stats).some(n=>!Number.isInteger(n)||n<0||n>4))throw new RangeError('Carried stat values must be nonnegative integers no greater than four.');
     d.checkpointsEarned=[2,3].filter(f=>Array.isArray(carry.checkpointsEarned)&&carry.checkpointsEarned.includes(f));
     d.level=1+d.checkpointsEarned.length;
     d.initialStatBudget=integer(carry.initialStatBudget,0,2);
+    const allocated=Object.values(d.stats).reduce((a,b)=>a+b,0),earnedBudget=d.initialStatBudget+d.checkpointsEarned.length;
+    if(allocated>earnedBudget)throw new RangeError('Carried stats exceed the starting allocation and earned checkpoint rewards.');
+    if(carry.statPoints!==undefined&&(!Number.isInteger(carry.statPoints)||carry.statPoints<0||carry.statPoints>earnedBudget-allocated))throw new RangeError('Carried unspent stat points exceed the earned allocation.');
     d.xp=integer(carry.xp,0,Number.MAX_SAFE_INTEGER);
     for(const id of Array.isArray(carry.skills)?carry.skills:[]) {
       const choice=DUNGEON_SKILLS.find(s=>s.id===id&&s.classId===classId&&s.requirements.level<=d.level);
@@ -72,12 +78,13 @@ export function createDungeon(options={},classId='engineer') {
       const choice=DUNGEON_GEAR.find(item=>item.id===id&&d.checkpointsEarned.includes(item.floor));
       if(choice&&!d.gearFloors.includes(choice.floor)){d.gear.push(id);d.gearFloors.push(choice.floor);}
     }
-    d.statPoints=integer(carry.statPoints,0,Math.max(0,d.initialStatBudget+d.checkpointsEarned.length-Object.values(d.stats).reduce((a,b)=>a+b,0)));
+    d.statPoints=carry.statPoints??0;
     d.skillPoints=Math.max(0,d.checkpointsEarned.length-d.skills.length);
     d.gearChoices=Math.max(0,d.checkpointsEarned.length-d.gear.length);
     d.configured=!!carry.configured||Object.values(d.stats).some(Boolean)||d.skills.length>0||d.gear.length>0;
     d.previousDays=Array.isArray(carry.previousDays)?copy(carry.previousDays):[];
     if(carry.recap) d.previousDays.push(copy(carry.recap));
+    d.previousDays=d.previousDays.slice(-7);
   }
   return d;
 }
@@ -103,17 +110,17 @@ const canChoose = g => !!g?.dungeon && ['playing','paused'].includes(g.status);
 export function chooseDungeonStat(g,key) {
   if(!canChoose(g)||g.dungeon.statPoints<=0||!DUNGEON_STATS.some(s=>s.key===key))return false;
   g.dungeon.stats[key]++;g.dungeon.statPoints--;g.dungeon.configured=true;
-  record(g,'dungeon-choice',`${DUNGEON_STATS.find(s=>s.key===key).name} increased to ${g.dungeon.stats[key]}.`,{choiceType:'stat',id:key});return true;
+  record(g,'dungeon-choice',`${DUNGEON_STATS.find(s=>s.key===key).name} increased to ${g.dungeon.stats[key]}.`,{choiceType:'stat',id:key});refreshDungeonBosses(g);return true;
 }
 export function chooseDungeonSkill(g,id) {
   const item=DUNGEON_SKILLS.find(s=>s.id===id),d=g?.dungeon;
   if(!canChoose(g)||!item||d.skillPoints<=0||d.skills.includes(id)||item.classId!==g.classId||item.requirements.level>d.level||item.requirements.excludes.some(excluded=>d.skills.includes(excluded))||(item.requirements.skillId&&!d.skills.includes(item.requirements.skillId)))return false;
-  d.skills.push(id);d.skillPoints--;d.configured=true;record(g,'dungeon-choice',`Learned ${item.name}. ${item.description}`,{choiceType:'skill',id});return true;
+  d.skills.push(id);d.skillPoints--;d.configured=true;record(g,'dungeon-choice',`Learned ${item.name}. ${item.description}`,{choiceType:'skill',id});refreshDungeonBosses(g);return true;
 }
 export function chooseDungeonGear(g,id) {
   const item=DUNGEON_GEAR.find(s=>s.id===id),d=g?.dungeon;
   if(!canChoose(g)||!item||d.gearChoices<=0||!d.checkpointsEarned.includes(item.floor)||d.gearFloors.includes(item.floor)||d.gear.includes(id))return false;
-  d.gear.push(id);d.gearFloors.push(item.floor);d.gearChoices--;d.configured=true;record(g,'dungeon-choice',`Equipped ${item.name}. ${item.description}`,{choiceType:'gear',id});return true;
+  d.gear.push(id);d.gearFloors.push(item.floor);d.gearChoices--;d.configured=true;record(g,'dungeon-choice',`Equipped ${item.name}. ${item.description}`,{choiceType:'gear',id});refreshDungeonBosses(g);return true;
 }
 export function dungeonEffects(g) {
   const stats=g.dungeon.stats,e={fixTime:-.08*stats.technical,diagnosticTime:-.1*stats.technical,projectTime:-.07*stats.technical,questionTime:-.12*stats.insight,moraleLoss:-.15*stats.composure,bluffBonus:15*stats.bullshit,bluffSeconds:3*stats.bullshit,bluffPower:stats.bullshit,bluffRecovery:2*stats.bullshit,bossBonus:0,testedBonus:0,recovery:0};
@@ -131,19 +138,27 @@ export function recordDungeonProject(g,project,action) {
   g.dungeon.projectLog.push(entry);g.dungeon.journal.push({type:'project-history',day:g.dungeon.day,...entry});
   const xp={test:20,release:50,remediate:35}[action];if(xp)gainDungeonXP(g,`project-${project.id}-${action}`,xp,entry.text);
 }
-export function dungeonBossReaction(g,boss) {
+export function dungeonBossReaction(g,boss,previous=null) {
   const d=g.dungeon,e=dungeonEffects(g),ranked=DUNGEON_STATS.map(s=>({...s,value:d.stats[s.key]})).sort((a,b)=>b.value-a.value),dominant=ranked[0];
-  const tested=d.projectLog.filter(p=>p.action==='release').length,unsafe=d.projectLog.filter(p=>p.action==='unsafeRelease').length,repaired=d.projectLog.filter(p=>p.action==='remediate').length;
+  const tested=previous?.tested??d.projectLog.filter(p=>p.action==='release').length,unsafe=previous?.unsafe??d.projectLog.filter(p=>p.action==='unsafeRelease').length,repaired=previous?.repaired??d.projectLog.filter(p=>p.action==='remediate').length;
   const stageBonus=d.configured?dominant.value*8+d.stats.bullshit*8+e.bossBonus+tested*20+repaired*10:0;
-  const recovery=d.configured?d.stats.composure*2+e.recovery+repaired*2:0;
+  const recovery=d.configured?d.stats.composure*2+repaired*2:0;
   const build=dominant.value?`${dominant.name} ${dominant.value}`:d.skills.length?DUNGEON_SKILLS.find(s=>s.id===d.skills[0]).name:'an unallocated build';
-  const response={bossId:boss.id,floor:d.floor,build,stats:{...d.stats},skills:[...d.skills],gear:[...d.gear],tested,unsafe,repaired,stageBonus,recovery,
-    text:`${boss.title} notices ${build}. The audit goblin remembers ${tested} tested release${tested===1?'':'s'}, ${unsafe} unsafe release${unsafe===1?'':'s'}, and ${repaired} repaired risk${repaired===1?'':'s'}. ${unsafe?'An unsafe release earns no safety credit; its earlier incident risk remains exactly as announced. ':''}Each correct boss stage earns +${stageBonus} build/safety points and +${recovery} morale. All evidence remains available and the SLA is unchanged.`};
-  d.bossReactions.push(response);record(g,'dungeon-boss',response.text,{bossId:boss.id,stageBonus,recovery});return response;
+  const response={bossId:boss.id,bossTitle:boss.title,floor:previous?.floor??d.floor,build,stats:{...d.stats},skills:[...d.skills],gear:[...d.gear],tested,unsafe,repaired,stageBonus,recovery,revision:(previous?.revision??0)+1,
+    text:`${boss.title} ${previous?'updates its response to':'notices'} your current build: ${build}. The audit goblin remembers ${tested} tested release${tested===1?'':'s'}, ${unsafe} unsafe release${unsafe===1?'':'s'}, and ${repaired} repaired risk${repaired===1?'':'s'} before this encounter. ${unsafe?'An unsafe release earns no safety credit; its earlier incident risk remains exactly as announced. ':''}Your build is checked again whenever you choose an upgrade. Each correct boss stage started now earns +${stageBonus} build/safety points and +${recovery} morale. Work already started keeps its quoted effects. All evidence remains available and the SLA is unchanged.`};
+  const index=d.bossReactions.findIndex(item=>item.bossId===boss.id);
+  if(index<0)d.bossReactions.push(response);else d.bossReactions[index]=response;
+  record(g,'dungeon-boss',response.text,{bossId:boss.id,stageBonus,recovery,updated:!!previous});return response;
+}
+function refreshDungeonBosses(g) {
+  for(const ticket of g.queue.filter(item=>item.boss&&!item.resolution&&item.dungeonReaction)) {
+    const previous=ticket.dungeonReaction;
+    ticket.dungeonReaction=dungeonBossReaction(g,{id:ticket.bossId,title:previous.bossTitle||ticket.source.title},previous);
+  }
 }
 export function finishDungeon(g) {
   const d=g.dungeon;d.cleared=g.morale>0&&g.completedNormal===g.totalNormal&&g.bossesDefeated===Object.keys(g.bossStatus).length;
-  d.recap={day:d.day,cleared:d.cleared,floor:d.floor,level:d.level,xp:d.xp,handled:g.completedNormal,bosses:g.bossesDefeated,stats:{...d.stats},skills:[...d.skills],gear:[...d.gear],tested:g.projects.filter(p=>p.releaseMethod==='tested').length,unsafe:g.projects.filter(p=>p.unsafeEver).length,incidents:g.incidentsReported,
+  d.recap={day:d.day,cleared:d.cleared,floor:d.floor,level:d.level,xp:d.xp,handled:g.completedNormal,bosses:g.bossesDefeated,stats:{...d.stats},skills:[...d.skills],gear:[...d.gear],bossReactions:copy(d.bossReactions),tested:g.projects.filter(p=>p.releaseMethod==='tested').length,unsafe:g.projects.filter(p=>p.unsafeEver).length,incidents:g.incidentsReported,
     text:d.cleared?`Dungeon cleared: all 3 floors, ${g.completedNormal} routine cases, and ${g.bossesDefeated} bosses. The promotion committee awards you a slightly longer lanyard. Your build, project history, and boss reactions are recorded below.`:`Day ${d.day} ended on floor ${d.floor}. ${g.completedNormal} routine cases handled and ${g.bossesDefeated} bosses defeated. Your character and its lessons carry forward.`};
   record(g,'dungeon-recap',d.recap.text,{cleared:d.cleared});
 }
