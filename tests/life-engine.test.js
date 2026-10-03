@@ -272,7 +272,7 @@ test('early clock-out records unresolved cases, returns, and pending risks with 
   chooseEvening(life, 'rest'); chooseConversation(life, 'remember');
   const carry = beginNextDay(life);
   assert.equal(carry.morale, 98);
-  assert.match(carry.briefing.join(' '), /They handled the cases.*costs 2 starting morale/);
+  assert.match(carry.briefing.join(' '), /They own recovery.*costs 2 starting morale/);
   assert.equal(life.workSummary, null);
   assert.equal(life.homeIntro, '');
   assert.equal(completeEvening(life).morale, 100);

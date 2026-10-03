@@ -20,7 +20,7 @@ export function createLife(seed = 'practice') {
     choices: { inbox: {}, evening: null, conversation: null },
     memory: { mira: null, rowan: null, packet: null },
     promise: null, studyBonus: 0, workSummary: null, pending: [],
-    homeIntro: '', activityResult: '', conversationResult: '', lastResult: null, history: [],
+    homeIntro: '', homeConversation:null, activityResult: '', conversationResult: '', lastResult: null, history: [],
   };
 }
 
@@ -48,11 +48,11 @@ function auditConfirms(seed, day) {
 
 export function inboxFor(life) {
   const episode = DAYS[(life.day - 1) % DAYS.length];
-  const miraFollow = life.memory.mira === 'heard' ? 'Yesterday you checked the facts with me. I saved you a diagnostic note. ' : life.memory.mira === 'rumour' ? 'That forwarded rumour made things awkward. I would appreciate a direct check-in today. ' : life.memory.mira === 'boundary' ? 'Thanks for saying clearly what you had time for yesterday. ' : life.memory.mira === 'confirmed' ? 'The audit confirmed the claim you backed yesterday. Thanks for the support. Let’s check today’s facts too. ' : life.memory.mira === 'contradicted' ? 'The audit contradicted the claim you backed yesterday. Let’s check the facts together and correct the record. ' : '';
+  const miraFollow = life.choices.inbox['mira-thread'] ? '' : life.memory.mira === 'heard' ? 'Yesterday you checked the facts with me. I saved you a diagnostic note. ' : life.memory.mira === 'rumour' ? 'That forwarded rumour made things awkward. I would appreciate a direct check-in today. ' : life.memory.mira === 'boundary' ? 'Thanks for saying clearly what you had time for yesterday. ' : life.memory.mira === 'confirmed' ? 'The audit confirmed the claim you backed yesterday. Thanks for the support. Let’s check today’s facts too. ' : life.memory.mira === 'contradicted' ? 'The audit contradicted the claim you backed yesterday. Let’s check the facts together and correct the record. ' : '';
   const rowanFollow = life.memory.rowan === 'missed' ? 'Yesterday we talked past each other. A fresh start would help. ' : life.memory.rowan === 'repaired' ? 'Thanks for checking what I meant yesterday. ' : life.memory.rowan === 'heard' ? 'Yesterday felt good. Let’s keep telling each other what we actually need. ' : '';
   const messages = [
     { id: 'mira-thread', channel: 'Teams', from: 'Mira · fictional teammate', subject: episode.subject,
-      body: miraFollow + episode.body,
+      body: miraFollow + episode.body + (life.relationships.mira>=66 || life.memory.mira==='heard' ? ' Diagnostic note: '+episode.clue : ''),
       choices: [choice('check-facts', 'Check the facts with Mira; ask for the diagnostic note', '−3 energy; stronger trust; +1 teammate assist (maximum 4)'), choice('set-boundary', 'Offer a later check-in and protect the current queue', '+5 energy; clear boundary; small trust gain'), choice('spread-rumour', 'Forward the screenshot with “thoughts?”', 'More team friction; +5 stress; −2 work morale'), choice('back-claim', 'Back Mira’s claim before the evidence arrives', '+4 trust; −5 energy now. Tomorrow’s audit may confirm or contradict it, changing trust and starting assists')] },
     { id: 'rowan-plan', channel: 'Email', from: 'Rowan · fictional partner', subject: 'Tonight, in the non-ticket universe',
       body: rowanFollow + 'Fancy quiet tea tonight? A clear “I need rest” is fine too. Packet has already RSVP’d by sitting in the invitation.',
@@ -106,16 +106,18 @@ export function chooseMessage(life, messageId, choiceId) {
 export function endWorkday(life, summary = {}) {
   if (life.stage !== 'work' || !summary || typeof summary !== 'object' || Array.isArray(summary)) return false;
   const count = value => Number.isFinite(value) ? clamp(Math.floor(value), 0, 100) : 0;
-  const handedOff = count((Array.isArray(summary.queue) ? summary.queue.length : 0) + (Array.isArray(summary.returns) ? summary.returns.length : 0));
+  const incidentHandoffs=Array.isArray(summary.history)?summary.history.filter(t=>t.incident&&t.handoff?.status==='recovery-pending').length:0;
+  const handedOff = count((Array.isArray(summary.queue) ? summary.queue.length : 0) + (Array.isArray(summary.returns) ? summary.returns.length : 0) + incidentHandoffs);
   const pendingRisks = count(Array.isArray(summary.risks) ? summary.risks.filter(risk => risk?.status === 'pending').length : 0);
   const handoffStress = Math.min(8, handedOff + pendingRisks * 2);
   const handoffMorale = Math.min(3, Math.ceil((handedOff + pendingRisks) / 3));
   life.workSummary = { missed: count(summary.missed), incidents: count(summary.incidents ?? summary.incidentsReported), projectsCompleted: count(summary.projectsCompleted), handedOff, pendingRisks, handoffStress, handoffMorale };
   const strain = Math.min(12, life.workSummary.missed * 2 + life.workSummary.incidents * 3);
   change(life, { energy: -18 - strain, stress: 12 + strain + handoffStress });
+  life.homeConversation=null;
   life.stage = 'home'; life.activityResult = ''; life.conversationResult = ''; life.lastResult = null;
   life.homeIntro = handedOff || pendingRisks
-    ? `You hand off ${handedOff} unresolved case${handedOff === 1 ? '' : 's'} and ${pendingRisks} pending risk${pendingRisks === 1 ? '' : 's'} to the next shift. They handle that work; tomorrow you make a short handoff check-in. +${handoffStress} stress tonight and −${handoffMorale} starting morale tomorrow (minimum 90).`
+    ? `You hand off ${handedOff} unresolved case${handedOff === 1 ? '' : 's'} and ${pendingRisks} pending risk${pendingRisks === 1 ? '' : 's'} to the next shift. They own recovery; restoration is pending. Tomorrow you make a short handoff check-in. +${handoffStress} stress tonight and −${handoffMorale} starting morale tomorrow (minimum 90).`
     : `The workday is closed with no unresolved cases or pending risks handed off. You completed ${life.workSummary.projectsCompleted} project${life.workSummary.projectsCompleted === 1 ? '' : 's'}. Home has two small decisions, then sleep.`;
   record(life, 'workday', 'clock-out', life.homeIntro);
   return true;
@@ -135,6 +137,7 @@ export function homeOptions(life) {
   } else if (promiseMet) {
     conversation = { ...conversation, context: 'You kept today’s quiet-tea promise. ' + episode.context };
   }
+  if(life.homeConversation) conversation=JSON.parse(JSON.stringify(life.homeConversation));
   return { activities: [
     { id: 'rest', label: 'Rest without earning it first', description: 'An early shower, a blanket, and a show whose problems fit inside one episode.', effect: '+32 energy; −26 stress; best recovery' },
     { id: 'packet', label: 'Play with Packet the cat', description: 'Ribbon toy, cardboard castle, sunny lap. Packet promotes you to Senior String Operator.', effect: '+22 energy; −18 stress; +12 Packet bond' },
@@ -160,7 +163,7 @@ export function chooseEvening(life, id) {
     change(life, { energy: -8, stress: 4 }); life.studyBonus = 1;
     text = 'You practice one diagnostic: +1 teammate assist next morning (maximum 4), −8 energy, +4 stress. You close the notes before they become a second shift.';
   }
-  life.choices.evening = id; life.activityResult = text; feedback(life, text); record(life, 'evening', id, text);
+  life.choices.evening = id; life.homeConversation=JSON.parse(JSON.stringify(homeOptions(life).conversation)); life.activityResult = text; feedback(life, text); record(life, 'evening', id, text);
   return true;
 }
 
@@ -212,7 +215,7 @@ export function beginNextDay(life) {
   const assists = clamp(3 + life.studyBonus + auditAssist + (trusted ? 1 : 0) - (life.relationships.mira < 35 ? 1 : 0), 2, 4);
   const briefing = [`After sleep: ${life.energy} energy, ${life.stress} stress. Start with ${morale} morale and ${assists} teammate assists.`];
   briefing.push(...auditResults.map(item => item.text));
-  if (handoffMorale) briefing.push(`Yesterday’s early clock-out handed ${life.workSummary.handedOff} unresolved cases and ${life.workSummary.pendingRisks} pending risks to the next shift. They handled the cases; your morning handoff check-in costs ${handoffMorale} starting morale, with a minimum of 90.`);
+  if (handoffMorale) briefing.push(`Yesterday's workday handed ${life.workSummary.handedOff} unresolved cases and ${life.workSummary.pendingRisks} pending risks to the next shift. They own recovery; service restoration remains pending. Your morning handoff check-in costs ${handoffMorale} starting morale, with a minimum of 90.`);
   if (life.choices.evening === 'study') briefing.push('Last night’s study adds an assist, up to the four-assist limit. Rest is still available every evening.');
   if (trusted) briefing.push('Mira trusts your fact-checking and prepares extra cover. Her next message includes a fresh diagnostic note.');
   else if (life.relationships.mira < 35) briefing.push('Team chat feels strained: one fewer starting assist. A direct, factual reply to Mira starts rebuilding trust.');
@@ -222,7 +225,7 @@ export function beginNextDay(life) {
   if (life.promise?.status === 'rescheduled') briefing.push('You and Rowan changed the tea plan honestly. Today begins without a hidden promise.');
   life.day += 1; life.stage = 'work'; life.studyBonus = 0; life.promise = null;
   life.choices = { inbox: {}, evening: null, conversation: null };
-  life.workSummary = null; life.homeIntro = ''; life.activityResult = ''; life.conversationResult = ''; life.lastResult = null;
+  life.workSummary = null; life.homeIntro = ''; life.homeConversation=null; life.activityResult = ''; life.conversationResult = ''; life.lastResult = null;
   for (const result of auditResults) record(life, 'consequence', result.id, result.text);
   record(life, 'morning', 'begin', briefing.join(' '));
   return { day: life.day, morale, assists, briefing };

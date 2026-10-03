@@ -23,7 +23,7 @@ export const ACTIONS = Object.freeze({
   bluff: { seconds: 0.8, points: 75 },
 });
 /** Display and simulation use these same duration helpers. Invalid kinds return null. */
-export function actionSeconds(g,kind) {return Object.hasOwn(ACTIONS,kind)?scaledDungeonSeconds(g,ACTIONS[kind].seconds,kind==='fix'?'fixTime':''):null;}
+export function actionSeconds(g,kind) {return Object.hasOwn(ACTIONS,kind)?scaledDungeonSeconds(g,ACTIONS[kind].seconds,['fix','wrong'].includes(kind)?'fixTime':''):null;}
 export function investigationSeconds(g,kind) {return Object.hasOwn(INVESTIGATIONS,kind)?scaledDungeonSeconds(g,INVESTIGATIONS[kind].seconds,kind==='question'?'questionTime':'diagnosticTime'):null;}
 export function projectSeconds(g,action) {return Object.hasOwn(PROJECT_ACTIONS,action)?scaledDungeonSeconds(g,PROJECT_ACTIONS[action],'projectTime'):action==='defer'?0:null;}
 export const CLASSES = Object.freeze({
@@ -87,9 +87,11 @@ function settleTicket(g, ticket, resolution) {
   if (ticket.resolution) return;
   ticket.resolution = resolution;
   ticket.closedAt=g.time;
-  g.history.push({...ticket,actions:ticket.actions.map(a=>({...a})),evidence:ticket.evidence.map(e=>({...e}))});
+  g.history.push({...ticket,actions:ticket.actions.map(a=>({...a})),evidence:[...(ticket.previousEvidence||[]),...ticket.evidence].map(e=>({...e}))});
   if (ticket.incident) {
     if (resolution === 'fix') g.incidentsResolved++; else g.incidentsMissed++;
+    const project=g.projects.find(p=>p.incidentId===ticket.id);
+    if(project) project.incidentOutcome=resolution==='fix'?'recovered':'handed-off';
   } else if (ticket.boss) {
     g.bossStatus[ticket.bossId] = resolution === 'fix' ? 'defeated' : 'missed';
     if (ticket.bossId === BOSSES[0].id && resolution === 'fix') g.printerDefeated = true;
@@ -105,10 +107,11 @@ function missTicket(g, ticket) {
   const penalty = dungeonMoraleLoss(g,ticket.boss ? 25 : 14);
   g.morale = Math.max(0, g.morale - penalty); g.missed++; g.streak = 0;
   if (ticket.boss) g.bossesMissed++;
+  if(ticket.incident) ticket.handoff={status:'recovery-pending',owner:'next recovery shift',text:'SLA missed. Recovery handed to the next shift; service restoration is still pending. No recovery reward.'};
   settleTicket(g, ticket, 'missed');
   if (g.work?.ticketId === ticket.id) g.work = null;
   emit(g, 'expired', { id: ticket.id, boss: !!ticket.boss, bossId: ticket.bossId, penalty,
-    text: `${ticket.source.title}: SLA missed. −${penalty} morale` });
+    incident:!!ticket.incident, text: `${ticket.source.title}: SLA missed. -${penalty} morale${ticket.handoff?' '+ticket.handoff.text:''}` });
 }
 function reportTicket(g, source, severity, extra = {}) {
   const id = g.nextId++, slaSeconds = SLA_SECONDS[severity];
@@ -265,16 +268,18 @@ function addRisk(g, details) {
 }
 function preventRisk(g,risk) {
   if(risk.status!=='pending') return;
-  risk.status='prevented'; g.incidentsPrevented++; g.score+=400; g.projectPoints+=400;
-  emit(g,'prevented',{text:`Incident prevented: ${risk.service}. +400 points. The boring ending is the best ending.`});
+  risk.status='prevented'; g.incidentsPrevented++;
+  // All current risks originate in the player's unsafe action. Repairing one
+  // avoids its consequence but cannot create a repeatable reward loop.
+  emit(g,'prevented',{text:`Incident prevented: ${risk.service}. Self-created risk corrected; no prevention bonus. Tested releases earn the safety reward.`});
 }
 function escalateRisk(g,risk) {
   risk.status='incident';
   const severity=g.incidentsReported>0 && g.sev1Unlocked ? 1 : 2;
-  const ticket=reportTicket(g,incidentSource(risk,severity),severity,{incident:true,riskId:risk.id,cause:risk.cause});
+  const ticket=reportTicket(g,incidentSource(risk,severity),severity,{incident:true,riskId:risk.id,cause:risk.cause,recoveryPoints:risk.sourceTicketId?0:severity===2?200:300});
   g.incidentsReported++; g.selected=ticket.id;
   const project=g.projects.find(p=>p.id===risk.projectId);
-  if(project) project.status='completed';
+  if(project) {project.status='completed';project.incidentId=ticket.id;}
   emit(g,'incident',{text:`SEV ${severity}: ${ticket.source.title}. Cause: ${risk.cause} ${ticket.slaSeconds} seconds from report.`,id:ticket.id});
 }
 /** Projects share the same worker as tickets. No background free progress. */
@@ -331,8 +336,8 @@ function completeWork(g) {
   const ticket = g.queue.find(t => t.id === work.ticketId);
   if (!ticket || ticket.stage !== work.stage) return;
   if (work.type === 'investigation') {
-    const { id, kind, label, reply, evidence } = work.investigation;
-    const finding = { id, kind, label, reply, evidence };
+    const { id, kind, label, reply, evidence, quality } = work.investigation;
+    const finding = { id, kind, label, reply, evidence, quality, stage:ticket.stage || 0 };
     if (!ticket.evidence.some(item => item.id === id)) {
       ticket.evidence.push(finding); ticket.inquiryCount++;
       emit(g, 'investigation', { ticketId: ticket.id, stage: ticket.stage, ...finding, text: reply });
@@ -342,6 +347,9 @@ function completeWork(g) {
   const kind = work.action.kind;
   if (kind === 'bluff') { completeBluff(g, ticket, work); return; }
   const completedStage = ticket.stage, completedTitle = ticket.source.title;
+  const moraleBefore=g.morale;
+  const expert=kind==='fix'&&!ticket.incident&&!ticket.inquiryCount&&!ticket.mistakes&&!ticket.patchUsed;
+  const investigated=kind==='fix'&&!ticket.incident&&!ticket.mistakes&&!ticket.patchUsed&&ticket.evidence.some(e=>!e.quality);
   let points = 0, penalty = 0, defeated = false, closed = false;
   if (kind === 'wrong') {
     penalty=work.moralePenalty;g.wrong++; ticket.mistakes++; g.streak = 0; g.morale = Math.max(0, g.morale - penalty);
@@ -351,8 +359,8 @@ function completeWork(g) {
     g.streak++; g.bestStreak = Math.max(g.bestStreak, g.streak);
     points = ACTIONS.fix.points + CLASSES[g.classId].fixBonus + Math.min(5, g.streak - 1) * 25 + (ticket.urgent && !ticket.boss ? 50 : 0);
     g.morale = Math.min(100, g.morale + (ticket.incident ? 10 : 4)+work.effects.recovery);
-    if (ticket.incident) points = ticket.severity === 2 ? 200 : 300;
-    else if (!ticket.inquiryCount && !ticket.mistakes && !ticket.patchUsed) points += 25;
+    if (ticket.incident) points = ticket.recoveryPoints ?? (ticket.severity === 2 ? 200 : 300);
+    else if (expert || investigated) points += 25;
     // Correcting the offending case before its risk matures prevents the major incident.
     for (const risk of g.risks.filter(r=>r.status==='pending' && r.sourceTicketId===ticket.id)) preventRisk(g,risk);
     if (ticket.boss) {
@@ -361,7 +369,8 @@ function completeWork(g) {
       if(work.bossReward){points+=work.bossReward.stageBonus;g.morale=Math.min(100,g.morale+work.bossReward.recovery);}
       const boss = BOSSES.find(b => b.id === ticket.bossId);
       if (ticket.stage < boss.stages.length) {
-        ticket.stage++; ticket.source = boss.stages[ticket.stage - 1]; ticket.actions = actionsFor(ticket.source, g.random); ticket.evidence = [];
+        ticket.previousEvidence=[...(ticket.previousEvidence||[]),...ticket.evidence];
+        ticket.stage++; ticket.source = boss.stages[ticket.stage - 1]; ticket.actions = actionsFor(ticket.source, g.random); ticket.evidence = []; ticket.inquiryCount=0; ticket.mistakes=0;
         emit(g, 'boss-stage', { id: ticket.id, bossId: ticket.bossId, stage: ticket.stage, stageCount: ticket.stageCount,
           text: 'One fault down. The second act begins. Read the new evidence before you make your move.' });
       } else {
@@ -387,7 +396,7 @@ function completeWork(g) {
   }
   g.score += points; repairSelection(g);
   emit(g, 'outcome', { kind, points, penalty, text: work.action.outcome, title: completedTitle, streak: g.streak,
-    boss: !!ticket.boss, incident:!!ticket.incident, expert:kind==='fix'&&!ticket.incident&&!ticket.inquiryCount&&!ticket.mistakes&&!ticket.patchUsed, stage: completedStage, defeated, closed });
+    boss: !!ticket.boss, incident:!!ticket.incident, expert, investigated, moraleDelta:g.morale-moraleBefore, stage: completedStage, defeated, closed });
   if (kind === 'fix') {
     if (closed && !ticket.incident) award(g, 'firstfix');
     if (g.streak >= 3 && !ticket.incident) award(g, 'threestreak');

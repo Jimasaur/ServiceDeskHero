@@ -14,7 +14,7 @@ export function incidentSource(risk, severity) {
   return {id:`incident-${risk.id}`, title:risk.incidentTitle, category:`CAUSAL SEV ${severity} · RECOVERY`, icon:'🔥',
     user:'Service monitor · Verified impact',
     quote:'It was only one tiny change. The entire department has submitted a rebuttal.',
-    brief:`The ${risk.service} is failing. Cause: ${risk.cause} Recovery reward: +${severity===2?200:300} points and +10 morale.`,
+    brief:`The ${risk.service} is failing. Cause: ${risk.cause} Successful recovery reward: +${risk.sourceTicketId?0:severity===2?200:300} points and +10 morale.`,
     clue:'The previous version was healthy. Stop the rollout, restore the known-good version, and verify recovery before retesting.',
     investigations:[{id:'incident-scope',kind:'question',label:'Confirm the affected users',reply:'Everyone on the new version is affected. For once, “everyone” has supporting evidence.',evidence:'Affected users share the new release; the previous version remains healthy.'},
       {id:'incident-logs',kind:'diagnostic',label:'Compare release logs with the baseline',reply:'The failure starts at the unsafe release. The timeline would like a word.',evidence:'The new release fails; the verified previous version is healthy and available for recovery.'}],
