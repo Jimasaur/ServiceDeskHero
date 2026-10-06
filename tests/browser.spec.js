@@ -1,15 +1,17 @@
 import { test, expect } from '@playwright/test';
 import { TICKETS } from '../js/rush-tickets.js';
-import { BOSSES } from '../js/rush-bosses.js';
+import { BOSSES as OLD_BOSSES } from '../js/rush-bosses.js';
+import {MANAGER_BOSS} from '../js/rush-manager-boss.js';
+const BOSSES=[OLD_BOSSES[0],MANAGER_BOSS,OLD_BOSSES[1]];
 import * as Engine from '../js/rush-engine.js';
 import { incidentSource } from '../js/rush-projects.js';
 
 // Only the local static server is reachable. Test play never sends production feedback.
 async function boot(page) {
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
-  await page.clock.install({time: new Date('2026-10-01T12:00:00Z')});
+  await page.clock.install({time: new Date('2026-10-10T12:00:00Z')});
   await page.goto('/');
-  await page.clock.pauseAt(new Date('2026-10-01T12:00:02Z'));
+  await page.clock.pauseAt(new Date('2026-10-10T12:00:02Z'));
 }
 const ticketTabs = ['inc', 'req'];
 const deskTab = (page, tab) => page.locator(`[data-desk-tab="${tab}"]`);
@@ -170,7 +172,7 @@ test('desktop safe projects and twelve routine fixes complete a clean shift with
   await expect(page.locator('#best-label')).not.toContainText('99,999');
   await expect(page.locator('#best-label')).not.toContainText('88,888');
   await page.screenshot({path:testInfo.outputPath('01-desktop-lobby.png'), fullPage:true});
-  await page.locator('#start-button').click(); await expect(page.locator('#time')).toHaveText('0 / 14');
+  await page.locator('#start-button').click(); await expect(page.locator('#time')).toHaveText('0 / 15');
   const normals = new Set(), stages = new Set();
   await finishSafe(page, async source => {
     await assertNoIncidents(page);
@@ -180,18 +182,18 @@ test('desktop safe projects and twelve routine fixes complete a clean shift with
     } else {
       stages.add(source.id);
       if (stages.size === 1) {
-        await expect(page.locator('#time')).toHaveText('4 / 14');
+        await expect(page.locator('#time')).toHaveText('4 / 15');
         await expect(page.locator('#sla-time')).toHaveText('Not started');
         await page.screenshot({path:testInfo.outputPath('02-desktop-printer.png'), fullPage:true});
       }
     }
   });
-  expect(normals.size).toBe(12); expect(stages.size).toBe(4);
+  expect(normals.size).toBe(12); expect(stages.size).toBe(6);
   await expect(page.locator('#game')).toBeHidden();
   await expect(page.locator('#result-status')).toHaveText('SHIFT COMPLETE');
-  await expect(page.locator('#result-fixed')).toHaveText('14');
+  await expect(page.locator('#result-fixed')).toHaveText('15');
   await expect(page.locator('#result-breakdown')).toContainText('0 missed · 0 wrong moves');
-  await expect(page.locator('#result-breakdown')).toContainText('Bosses defeated: 2/2');
+  await expect(page.locator('#result-breakdown')).toContainText('Bosses defeated: 3/3');
   await expect(page.locator('#result-breakdown')).toContainText('Incidents: 0 recovered · 0 missed · 0 prevented');
   await expect(page.locator('#result-breakdown')).toContainText('Projects: 2 completed');
   await expect(page.locator('#result-achievements')).toContainText('The Pager Sleeps Tonight');
@@ -200,10 +202,10 @@ test('desktop safe projects and twelve routine fixes complete a clean shift with
   const saves = await page.evaluate(() => ({career:JSON.parse(localStorage.getItem('sdh_save_v2')), oldRush:JSON.parse(localStorage.getItem('sdh_rush_v1')), oldShift:JSON.parse(localStorage.getItem('sdh_shift_v2')), contact:JSON.parse(localStorage.getItem('sdh_contact_v3'))}));
   expect(saves.career.tickets).toBe(420); expect(saves.career.lifetimeTickets).toBe(9001);
   expect(saves.oldRush['rush-engineer']).toBe(99999); expect(saves.oldShift['rush-engineer']).toBe(88888);
-  expect(saves.contact['dungeon-engineer']).toBeGreaterThan(0);
+  expect(saves.contact['dungeon-career-1-engineer']).toBeGreaterThan(0);
   await page.locator('#share-button').click(); await expect(page.locator('#share-status')).not.toBeEmpty();
   await page.locator('#replay-button').click();
-  await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 15');
   await expect(page.locator('#sla-time')).toHaveText('Not started');
   await expect(page.locator('#case-notes')).toContainText('No evidence collected');
   await expect(projectButton(page, Engine.PROJECTS[0].id, 'test')).toBeEnabled();
@@ -221,7 +223,7 @@ test('unacknowledged Sev3 can be read indefinitely while random routine arrivals
   await page.clock.fastForward(3600000);
   await expect(page.locator('#ticket-title')).toHaveText(title); await expectOpenCount(page, 12);
   await expect(page.locator('#game')).toBeVisible(); await expect(page.locator('#results')).toBeHidden();
-  await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 15');
   await expect(page.locator('#morale-number')).toHaveText('100%'); await expect(page.locator('#sla-time')).toHaveText('Not started');
   await assertNoIncidents(page); await acknowledge(page); await expect(page.locator('#sla-time')).toHaveText('15:00');
   await page.clock.fastForward(1100); expect(await slaSeconds(page)).toBe(899);
@@ -231,7 +233,7 @@ test('unacknowledged Sev3 can be read indefinitely while random routine arrivals
   await page.clock.fastForward(1800000); await expect(page.locator('#sla-time')).toHaveText(paused);
   await page.locator('#resume-button').click(); await expect(page.locator('#sla-time')).toHaveText(paused);
   await page.clock.fastForward(1100); expect(await slaSeconds(page)).toBe(898);
-  await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#time')).toHaveText('0 / 15');
 });
 
 test('an unhelpful optional question never blocks diagnostic evidence or a correct fix', async ({page}) => {
@@ -251,7 +253,7 @@ test('an unhelpful optional question never blocks diagnostic evidence or a corre
   await expect(page.locator('#case-notes')).toContainText(question.reply);
   await expect(page.locator('#case-notes')).toContainText(question.evidence);
   await expect(page.locator(`[data-inquiry="${question.id}"]`)).toBeDisabled();
-  await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#score')).toHaveText('0'); await expect(page.locator('#time')).toHaveText('0 / 15');
   await page.clock.fastForward(120000); expect(await openCount(page)).toBeGreaterThan(1);
   await page.locator('#diagnostics-button').click(); await page.locator(`[data-inquiry="${diagnostic.id}"]`).click();
   await openDesk(page, 'req'); await page.locator('#queue [data-ticket]').first().click(); const otherTitle = await page.locator('#ticket-title').innerText();
@@ -284,7 +286,7 @@ test('unsafe change causes Sev2 at report; recovery teaches the consequence befo
   await fix(page);
   expect(Number((await page.locator('#score').innerText()).replaceAll(',', ''))).toBeGreaterThan(score);
   await expect(page.locator('#queue button').filter({hasText:firstTitle})).toHaveCount(0);
-  await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#time')).toHaveText('0 / 15');
   const normals = new Set(), printerStages = new Set();
   for (let n = 0; n < 14 && (normals.size < 8 || printerStages.size < 2); n++) {
     await ready(page); const source = await currentSource(page);
@@ -314,7 +316,7 @@ test('preventative remediation cancels an unsafe change risk before any incident
   await doProject(page, project, 'remediate', 18100);
   expect(Number((await page.locator('#score').innerText()).replaceAll(',', ''))).toBe(0);
   await page.clock.fastForward(180000); await assertNoIncidents(page);
-  await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#time')).toHaveText('0 / 15');
   await expect(page.locator('#morale-number')).toHaveText('100%');
   await expect(page.locator('#sla-time')).toHaveText('Not started');
   await finishSafe(page); await expect(page.locator('#result-breakdown')).toContainText('0 missed · 0 wrong moves');
@@ -336,8 +338,8 @@ test('projects compete with ticket work, can be interrupted, and must be complet
   await expect(projectButton(page, first, 'release')).toBeEnabled();
   await doProject(page, first, 'defer', 0);
   await expect(page.locator('#score')).toHaveText('0'); await assertNoIncidents(page);
-  for (let step = 0; step < 16; step++) { await ready(page); await fix(page); }
-  await expect(page.locator('#time')).toHaveText('14 / 14');
+  for (let step = 0; step < 18; step++) { await ready(page); await fix(page); }
+  await expect(page.locator('#time')).toHaveText('15 / 15');
   await expect(page.locator('#results')).toBeHidden(); await expect(page.locator('#game')).toBeVisible();
   await expect(page.locator('#skip-idle-button')).toBeDisabled();
   await doProject(page, second, 'defer', 0);
@@ -354,7 +356,7 @@ test('an unacknowledged Sev2 expires once at its report-time deadline', async ({
   await page.clock.fastForward(2000); await assertNoIncidents(page);
   await expect(page.locator('#morale-number')).toHaveText('86%');
   await page.clock.fastForward(300000); await expect(page.locator('#morale-number')).toHaveText('86%');
-  await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#time')).toHaveText('0 / 15');
 });
 
 test('390px Faker earns both bosses: high-tech catches a bluff; low-tech extends SLA without fixing', async ({page}, testInfo) => {
@@ -365,7 +367,7 @@ test('390px Faker earns both bosses: high-tech catches a bluff; low-tech extends
   let caught = false, fooled = false;
   await finishSafe(page, async () => {
     await acknowledge(page); const bluff = page.locator('#bluff-button');
-    if (await bluff.isVisible() && await bluff.isEnabled()) {
+    if (await bluff.isVisible() && await bluff.isEnabled() && !(await page.locator('#ticket-title').innerText()).includes('Hydra')) {
       const title = await page.locator('#ticket-title').innerText(), stage = await page.locator('#boss-status').innerText();
       const progress = await page.locator('#time').innerText(), deadline = await slaSeconds(page);
       const score = Number((await page.locator('#score').innerText()).replaceAll(',', ''));
@@ -374,13 +376,13 @@ test('390px Faker earns both bosses: high-tech catches a bluff; low-tech extends
       await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#boss-status')).toHaveText(stage, {useInnerText:true});
       await expect(page.locator('#time')).toHaveText(progress); await expect(bluff).toBeDisabled();
       if (stage.includes('8/10')) {
-        caught = true; expect(progress).toBe('4 / 14');
+        caught = true; expect(progress).toBe('4 / 15');
         await expect(page.locator('#outcome')).toContainText('Bluff detected');
         await expect(page.locator('#morale-number')).toHaveText(`${morale - 10}%`);
         expect(Number((await page.locator('#score').innerText()).replaceAll(',', ''))).toBe(score);
         expect(await slaSeconds(page)).toBeLessThanOrEqual(deadline);
       } else {
-        fooled = true; expect(progress).toBe('13 / 14');
+        fooled = true; expect(progress).toBe('14 / 15');
         await expect(page.locator('#outcome')).toContainText('+10s');
         await expect(page.locator('#morale-number')).toHaveText(`${Math.min(100, morale + 10)}%`);
         expect(Number((await page.locator('#score').innerText()).replaceAll(',', ''))).toBe(score + 175);
@@ -391,8 +393,8 @@ test('390px Faker earns both bosses: high-tech catches a bluff; low-tech extends
     }
   });
   expect(caught).toBe(true); expect(fooled).toBe(true);
-  await expect(page.locator('#result-fixed')).toHaveText('14');
-  await expect(page.locator('#result-breakdown')).toContainText('Bosses defeated: 2/2'); await assertNoOverflow(page);
+  await expect(page.locator('#result-fixed')).toHaveText('15');
+  await expect(page.locator('#result-breakdown')).toContainText('Bosses defeated: 3/3'); await assertNoOverflow(page);
   await page.screenshot({path:testInfo.outputPath('07-mobile-report.png'), fullPage:true});
 });
 
@@ -405,20 +407,20 @@ test('320px keyboard ACK, wrong response, single-patch return and duplicate acti
   const wrong = await clickAction(page, 'wrong'); await page.clock.fastForward(2500);
   await expect(page.locator('#outcome')).toContainText(wrong.outcome); await expect(page.locator('#morale-number')).toHaveText('90%');
   await expect(page.locator('#actions button').filter({hasText:wrong.label})).toBeDisabled();
-  await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#time')).toHaveText('0 / 15');
   await page.keyboard.press('p'); await expect(page.locator('#pause-dialog')).toBeVisible();
   await page.keyboard.press('Escape'); await expect(page.locator('#pause-dialog')).not.toBeVisible();
   const patch = await clickAction(page, 'patch'); await page.clock.fastForward(900);
   await expect(page.locator('#empty-ticket')).toBeVisible(); await expectOpenCount(page, 0);
   await expect(page.locator('#skip-idle-button')).toBeDisabled();
-  await expect(page.locator('#time')).toHaveText('0 / 14'); await expect(page.locator('#resolved-label')).toHaveText('0 tickets closed');
+  await expect(page.locator('#time')).toHaveText('0 / 15'); await expect(page.locator('#resolved-label')).toHaveText('0 tickets closed');
   await page.clock.fastForward(11000); await expect(page.locator('#ticket-title')).toHaveText(title);
   await expect(page.locator('#acknowledge-button')).toBeHidden();
   await expect(page.locator('#actions button').filter({hasText:patch.label})).toBeDisabled();
   expect(await slaSeconds(page)).toBeLessThan(890);
   await clickAction(page); await page.keyboard.press('1'); await page.keyboard.press('2'); await page.keyboard.press('3');
   await page.clock.fastForward(2500);
-  await expect(page.locator('#resolved-label')).toHaveText('1 ticket closed'); await expect(page.locator('#time')).toHaveText('1 / 14');
+  await expect(page.locator('#resolved-label')).toHaveText('1 ticket closed'); await expect(page.locator('#time')).toHaveText('1 / 15');
   await ready(page); await expect(page.locator('#acknowledge-button')).toBeVisible(); await assertNoOverflow(page);
 });
 
@@ -439,7 +441,7 @@ test('First Shift stays playable with blocked storage and reduced motion', async
   });
   await page.emulateMedia({reducedMotion:'reduce'}); await boot(page); await page.locator('#start-button').click();
   await fix(page); await expect(page.locator('#resolved-label')).toHaveText('1 ticket closed');
-  await expect(page.locator('#time')).toHaveText('1 / 14');
+  await expect(page.locator('#time')).toHaveText('1 / 15');
   await ready(page); await expect(page.locator('#sla-time')).toHaveText('Not started'); expect(errors).toEqual([]);
 });
 
@@ -464,13 +466,13 @@ test('backgrounding freezes work, arrivals, SLA and returns; next-day replay ref
   await page.clock.fastForward(60000);
   await expect(page.locator('#sla-time')).toHaveText(sla); await expect(page.locator('#work-seconds')).toHaveText(work);
   await expect(page.locator('#next-arrival')).toHaveText(next); await expectOpenCount(page, 1);
-  await expect(page.locator('#time')).toHaveText('0 / 14');
-  await revealPage(page); await page.clock.fastForward(2000); await expect(page.locator('#time')).toHaveText('1 / 14');
+  await expect(page.locator('#time')).toHaveText('0 / 15');
+  await revealPage(page); await page.clock.fastForward(2000); await expect(page.locator('#time')).toHaveText('1 / 15');
   await ready(page); await acknowledge(page); const title = await page.locator('#ticket-title').innerText();
   await clickAction(page, 'patch'); await page.clock.fastForward(900); await expect(page.locator('#empty-ticket')).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
   await expect(page.locator('#pause-dialog')).toBeVisible(); await page.clock.fastForward(60000);
-  await expectOpenCount(page, 0); await expect(page.locator('#time')).toHaveText('1 / 14');
+  await expectOpenCount(page, 0); await expect(page.locator('#time')).toHaveText('1 / 15');
   await page.locator('#resume-button').click(); await page.clock.fastForward(11000);
   await expect(page.locator('#ticket-title')).toHaveText(title); await expect(page.locator('#acknowledge-button')).toBeHidden();
   expect(await slaSeconds(page)).toBeGreaterThanOrEqual(888); expect(await slaSeconds(page)).toBeLessThanOrEqual(889);

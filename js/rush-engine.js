@@ -2,6 +2,8 @@
 import { TICKETS } from './rush-tickets.js';
 import { PROJECTS, PROJECT_ACTIONS, incidentSource } from './rush-projects.js';
 export { PROJECTS, PROJECT_ACTIONS } from './rush-projects.js';
+import {createCareer, careerEffects, designProbability} from './rush-career.js';
+import {MANAGER_BOSS} from './rush-manager-boss.js';
 import { BOSSES } from './rush-bosses.js';
 export { BOSSES } from './rush-bosses.js';
 import {createDungeon, progressDungeon, gainDungeonXP, dungeonEffects, scaledDungeonSeconds, dungeonMoraleLoss, recordDungeonProject, dungeonBossReaction, finishDungeon} from './rush-dungeon.js';
@@ -23,9 +25,9 @@ export const ACTIONS = Object.freeze({
   bluff: { seconds: 0.8, points: 75 },
 });
 /** Display and simulation use these same duration helpers. Invalid kinds return null. */
-export function actionSeconds(g,kind) {return Object.hasOwn(ACTIONS,kind)?scaledDungeonSeconds(g,ACTIONS[kind].seconds,['fix','wrong'].includes(kind)?'fixTime':''):null;}
+export function actionSeconds(g,kind,ticket=g.queue?.find(t=>t.id===g.selected)) {return Object.hasOwn(ACTIONS,kind)?scaledDungeonSeconds(g,ACTIONS[kind].seconds*(['fix','wrong'].includes(kind)&&ticket?.incident?careerEffects(g).incidentTime:1),['fix','wrong'].includes(kind)?'fixTime':''):null;}
 export function investigationSeconds(g,kind) {return Object.hasOwn(INVESTIGATIONS,kind)?scaledDungeonSeconds(g,INVESTIGATIONS[kind].seconds,kind==='question'?'questionTime':'diagnosticTime'):null;}
-export function projectSeconds(g,action) {return Object.hasOwn(PROJECT_ACTIONS,action)?scaledDungeonSeconds(g,PROJECT_ACTIONS[action],'projectTime'):action==='defer'?0:null;}
+export function projectSeconds(g,action) {if(action==='remediate'&&g.career)return scaledDungeonSeconds(g,careerEffects(g).rollbackSeconds,'projectTime');return Object.hasOwn(PROJECT_ACTIONS,action)?scaledDungeonSeconds(g,PROJECT_ACTIONS[action],'projectTime'):action==='defer'?0:null;}
 export const CLASSES = Object.freeze({
   engineer: { title: 'The Engineer', description: '+25 points for each correct technical action', fixBonus: 25 },
   faker: { title: 'The Faker', description: 'One bluff per boss: skill below 5 buys time; expertise calls your bluff', fixBonus: 0 },
@@ -54,6 +56,7 @@ function actionsFor(source, random) { return shuffle(source.actions.map(a => ({ 
 export function createGame(seed = 'practice', relaxed = false, classId = 'engineer', options = {}) {
   if(!options || typeof options!=='object' || Array.isArray(options)) throw new TypeError('Game options must be an object.');
   const random = seededRandom(seed);
+  const bosses=options.career?[BOSSES[0],MANAGER_BOSS,BOSSES[1]]:BOSSES;
   const game = { seed: String(seed), relaxed: Boolean(relaxed), classId: Object.hasOwn(CLASSES, classId) ? classId : 'engineer',
     random, arrivalRandom: seededRandom(`${seed}:arrivals`), nextArrival: null,
     deck: shuffle(TICKETS, random).slice(0, TOTAL_NORMAL), cursor: 0, time: 0, score: 0, morale: 100,
@@ -64,10 +67,15 @@ export function createGame(seed = 'practice', relaxed = false, classId = 'engine
     sev1Unlocked: false, printerDefeated: false,
     projects: PROJECTS.map(p => ({...p, status:"pending", tested:false})), risks: [], nextRiskId:1,
     incidentsReported:0, incidentsResolved:0, incidentsMissed:0, incidentsPrevented:0, projectsCompleted:0, projectPoints:0,
-    bossStatus: Object.fromEntries(BOSSES.map(boss => [boss.id, 'pending'])),
+    bosses, career:options.career?createCareer(options.careerCarry):null, aptitude:options.aptitude==='network'?'network':'platform',
+    bossStatus: Object.fromEntries(bosses.map(boss => [boss.id, 'pending'])),
     queue: [], returns: [], history: [], nextId: 1,
     selected: null, work: null, phase: 0, status: 'playing', events: [] };
   game.dungeon=createDungeon(options,game.classId);
+  if(game.career) for(const project of game.projects) {
+    project.domain=project.id==='portal-rollout'?'platform':'network';project.baseRisk=project.domain==='platform'?.45:.55;
+    project.defectProbability=designProbability(game,project);project.latentDefect=seededRandom(`${seed}:design:${project.id}`)()<project.defectProbability;
+  }
   addTicket(game);
   scheduleArrival(game);
   emit(game, 'narrator', { text: 'Welcome to the Incident Theatre. Read at your own pace, then acknowledge your first Sev 3 ticket to start its 15-minute SLA.' });
@@ -149,7 +157,7 @@ function addBoss(g, boss) {
     title: boss.title, text: boss.entrance });
 }
 function eligibleBoss(g) {
-  return BOSSES.find(b => g.bossStatus[b.id] === 'pending' && g.completedNormal >= b.afterNormal);
+  return g.bosses.find(b => g.bossStatus[b.id] === 'pending' && g.completedNormal >= b.afterNormal);
 }
 function hasUnreportedIssues(g) {
   return g.reportedNormal < g.totalNormal || Object.values(g.bossStatus).some(s => s === 'pending');
@@ -255,7 +263,7 @@ export function takeAction(g, index, expectedTicketId = g.selected, expectedStag
   if (!action || action.tried || !Object.hasOwn(ACTIONS, action.kind) || (action.kind === 'patch' && ticket.patchUsed)) return false;
   if (action.kind === 'assist') g.assists--;
   if (action.kind === 'bluff') { ticket.bluffed = true; g.bluffs++; }
-  g.work = { ticketId: ticket.id, stage: ticket.stage, action, effects:dungeonEffects(g), moralePenalty:dungeonMoraleLoss(g,10), bossReward:ticket.dungeonReaction?{stageBonus:ticket.dungeonReaction.stageBonus,recovery:ticket.dungeonReaction.recovery}:null, started: g.time, ends: tickTime(g.time + actionSeconds(g,action.kind)) };
+  g.work = { ticketId: ticket.id, stage: ticket.stage, action, effects:dungeonEffects(g), moralePenalty:dungeonMoraleLoss(g,10), bossReward:ticket.dungeonReaction?{stageBonus:ticket.dungeonReaction.stageBonus,recovery:ticket.dungeonReaction.recovery}:null, started: g.time, ends: tickTime(g.time + actionSeconds(g,action.kind,ticket)) };
   emit(g, 'work', { kind: action.kind });
   return true;
 }
@@ -305,10 +313,11 @@ export function cancelWork(g) {
 function completeProject(g,work) {
   const project=g.projects.find(p=>p.id===work.projectId);
   const action=work.projectAction;
-  if(action==='test') {project.tested=true;recordDungeonProject(g,project,action); emit(g,'project',{text:`${project.title}: ${project.finding} Ready for a verified release.`});}
+  if(action==='test') {if(g.career){project.defectDetected=project.latentDefect;project.finding=project.latentDefect?'The bounded pilot found the seeded defect. Targeted correction and rollback verification made this build ready.':'The bounded pilot found no seeded defect. This check does not prove universal safety.';}project.tested=true;recordDungeonProject(g,project,action); emit(g,'project',{text:`${project.title}: ${project.finding} Ready for a verified release.`});}
   else if(action==='unsafeRelease') {
     project.status='released';project.releaseMethod='unsafe';project.unsafeEver=true;recordDungeonProject(g,project,action);
-    addRisk(g,{projectId:project.id,service:project.service,incidentTitle:project.incidentTitle,cause:`${project.title} was released without a compatibility test.`});
+    if(g.career&&!project.latentDefect){project.status='completed';project.releaseMethod='shortcut';g.projectsCompleted++;g.score+=350;g.projectPoints+=350;emit(g,'project',{text:`${project.title}: quick release stayed healthy. +350 points; ${Math.round((Math.round(PROJECT_ACTIONS.release*Math.max(.4,Math.min(1.6,1+work.effects.projectTime))*1000)/1000-(work.ends-work.started))*1000)/1000} seconds saved versus verified release, with unverified coverage.`});}
+    else addRisk(g,{projectId:project.id,service:project.service,incidentTitle:project.incidentTitle,cause:`${project.title} was released without a compatibility test.`});
   } else if(action==='remediate') {
     const risk=g.risks.find(r=>r.projectId===project.id&&r.status==='pending');
     if(risk) {preventRisk(g,risk);project.status='completed';project.releaseMethod='remediated';g.projectsCompleted++;recordDungeonProject(g,project,action);}
@@ -367,7 +376,7 @@ function completeWork(g) {
       g.bossStagesCleared++;
       gainDungeonXP(g,`boss-${ticket.bossId}-stage-${ticket.stage}`,40,`${ticket.source.title}: stage cleared`);
       if(work.bossReward){points+=work.bossReward.stageBonus;g.morale=Math.min(100,g.morale+work.bossReward.recovery);}
-      const boss = BOSSES.find(b => b.id === ticket.bossId);
+      const boss = g.bosses.find(b => b.id === ticket.bossId);
       if (ticket.stage < boss.stages.length) {
         ticket.previousEvidence=[...(ticket.previousEvidence||[]),...ticket.evidence];
         ticket.stage++; ticket.source = boss.stages[ticket.stage - 1]; ticket.actions = actionsFor(ticket.source, g.random); ticket.evidence = []; ticket.inquiryCount=0; ticket.mistakes=0;
@@ -418,7 +427,7 @@ function endGame(g) {
   g.status = 'finished'; g.work = null; g.nextArrival = null;
   g.completion = g.morale <= 0 ? 'morale' : g.sev1Unlocked ? 'career' : 'practice';
   g.bonus = g.morale > 0 ? Math.round(g.morale * 3) : 0; g.score += g.bonus;
-  if (g.completedNormal === g.totalNormal && g.bossesDefeated === BOSSES.length &&
+  if (g.completedNormal === g.totalNormal && g.bossesDefeated === g.bosses.length &&
       g.morale > 0 && g.missed === 0 && g.wrong === 0 && g.incidentsReported === 0) award(g, 'perfectsurvival');
   finishDungeon(g);
   emit(g, 'end', { completion: g.completion });

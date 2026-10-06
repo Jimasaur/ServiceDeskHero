@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { TICKETS } from '../js/rush-tickets.js';
-import { BOSSES } from '../js/rush-bosses.js';
+import { BOSSES as OLD_BOSSES } from '../js/rush-bosses.js';
+import {MANAGER_BOSS} from '../js/rush-manager-boss.js';
+const BOSSES=[OLD_BOSSES[0],MANAGER_BOSS,OLD_BOSSES[1]];
 import { PROJECTS } from '../js/rush-projects.js';
 
 // Keep playtests local. All progression is earned with public controls and the real
@@ -8,9 +10,9 @@ import { PROJECTS } from '../js/rush-projects.js';
 async function boot(page, viewport = {width:1440, height:900}) {
   await page.setViewportSize(viewport);
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
-  await page.clock.install({time:new Date('2026-10-01T12:00:00Z')});
+  await page.clock.install({time:new Date('2026-10-10T12:00:00Z')});
   await page.goto('/');
-  await page.clock.pauseAt(new Date('2026-10-01T12:00:02Z'));
+  await page.clock.pauseAt(new Date('2026-10-10T12:00:02Z'));
 }
 async function start(page) {
   await page.locator('#start-button').click();
@@ -183,7 +185,7 @@ test('lobby has exactly two reversible stat points, and Technical changes actual
   expect(seconds, 'two Technical points reduce the real 2.4-second repair').toBeLessThan(2.4);
   expect(seconds).toBeGreaterThan(0);
   await page.clock.fastForward(Math.ceil(seconds * 1000) + 200);
-  await expect(page.locator('#time')).toHaveText('1 / 14');
+  await expect(page.locator('#time')).toHaveText('1 / 15');
   await expect(page.locator('#resolved-label')).toHaveText('1 ticket closed');
 });
 
@@ -196,7 +198,7 @@ test('Insight speeds actual conversations and Composure reduces a wrong move’s
   const morale = Number.parseFloat(await page.locator('#morale-number').innerText());
   expect(morale, 'Composure mitigates the ordinary ten-point penalty').toBeGreaterThan(90);
   expect(morale).toBeLessThan(100);
-  await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#time')).toHaveText('0 / 15');
   const source = await currentSource(page), question = source.investigations.find(item => item.kind === 'question');
   await page.locator('#contact-user-button').click();
   await page.locator(`[data-inquiry="${question.id}"]`).click();
@@ -204,7 +206,7 @@ test('Insight speeds actual conversations and Composure reduces a wrong move’s
   await page.clock.fastForward(2100);
   await expect(page.locator('#case-notes')).toContainText(question.evidence);
   await fix(page);
-  await expect(page.locator('#time')).toHaveText('1 / 14');
+  await expect(page.locator('#time')).toHaveText('1 / 15');
 });
 
 test('320px fictional inbox keeps its clock contract, grants one assist, and remembers a repaired evening promise', async ({page}, testInfo) => {
@@ -329,7 +331,7 @@ for (const viewport of [{width:1440, height:900}, {width:390, height:844}]) {
         await expect(page.locator('#boss-reaction')).toContainText(/0 tested releases?/i);
       }
       await acknowledge(page);
-      if (faker && source.id === BOSSES[1].stages[0].id) {
+      if (faker && source.id === BOSSES[2].stages[0].id) {
         const progress = await page.locator('#time').innerText(), stage = await page.locator('#boss-status').innerText();
         const beforeSla = await slaSeconds(page), beforeScore = Number((await page.locator('#score').innerText()).replaceAll(',', ''));
         await page.locator('#bluff-button').click(); await page.clock.fastForward(900);
@@ -395,13 +397,13 @@ for (const viewport of [{width:1440, height:900}, {width:390, height:844}]) {
     }
     expect(chosenSecond).toBe(true); expect(chosenThird).toBe(true);
     if (faker) expect(earnedBluff).toBe(true);
-    expect(normalIds.size).toBe(12); expect(bossStages.size).toBe(4);
+    expect(normalIds.size).toBe(12); expect(bossStages.size).toBe(6);
     expect(upgradedRepairSeconds, 'the earned build changes real work duration').toBeLessThan(baseRepairSeconds);
     await expect(page.locator('#results')).toBeVisible();
     await expect(page.locator('#result-status')).toHaveText('SHIFT COMPLETE');
-    await expect(page.locator('#result-fixed')).toHaveText('14');
+    await expect(page.locator('#result-fixed')).toHaveText('15');
     await expect(page.locator('#result-breakdown')).toContainText('0 missed · 0 wrong moves');
-    await expect(page.locator('#result-breakdown')).toContainText('Bosses defeated: 2/2');
+    await expect(page.locator('#result-breakdown')).toContainText('Bosses defeated: 3/3');
     await expect(page.locator('#result-breakdown')).toContainText('Incidents: 0 recovered · 0 missed · 0 prevented');
     for (const name of [...build.names, 'Duct Tape Codex', 'Rollback Cape']) {
       await expect(page.locator('#dungeon-summary')).toContainText(new RegExp(name.replaceAll(' ', '[ -]'), 'i'));
@@ -433,7 +435,7 @@ for (const viewport of [{width:1440, height:900}, {width:390, height:844}]) {
     await page.locator('#next-day-button').click();
     await expect(page.locator('#home')).toBeHidden();
     await expect(page.locator('#game')).toBeVisible();
-    await expect(page.locator('#time')).toHaveText('0 / 14');
+    await expect(page.locator('#time')).toHaveText('0 / 15');
     await expect(page.locator('#score')).toHaveText('0');
     await expect(page.locator('#morale-number')).toHaveText(faker ? '99%' : '94%');
     await expect(page.locator('#assist-count')).toContainText(faker ? '3 left' : '4 left');
@@ -451,7 +453,7 @@ for (const viewport of [{width:1440, height:900}, {width:390, height:844}]) {
     await expect(page.locator('#inbox-dialog')).toContainText('Yesterday felt good');
     await page.locator('#close-inbox-button').click();
     await fix(page);
-    await expect(page.locator('#time')).toHaveText('1 / 14');
+    await expect(page.locator('#time')).toHaveText('1 / 15');
     await assertCompactViewport(page);
     expect(errors).toEqual([]);
   });
@@ -499,7 +501,7 @@ for (const viewport of [{width:320, height:740}, {width:844, height:390}]) {
     expect(await clockSnapshot(page)).toEqual(reopened);
     await closeCharacter(page);
     await fix(page);
-    await expect(page.locator('#time')).toHaveText('1 / 14');
+    await expect(page.locator('#time')).toHaveText('1 / 15');
     await expect(page.locator('#resolved-label')).toHaveText('1 ticket closed');
     await assertCompactViewport(page);
     expect(errors).toEqual([]);
@@ -533,5 +535,5 @@ test('Character also freezes pending project risks and workaround returns, then 
   await page.clock.fastForward(51000);
   await openDesk(page, 'inc');
   await expect(page.locator('#queue [data-ticket]').filter({hasText:'SEV 2'})).toHaveCount(1);
-  await expect(page.locator('#time')).toHaveText('0 / 14');
+  await expect(page.locator('#time')).toHaveText('0 / 15');
 });

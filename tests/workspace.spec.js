@@ -6,9 +6,9 @@ import { PROJECTS } from '../js/rush-projects.js';
 async function boot(page, viewport) {
   if (viewport) await page.setViewportSize(viewport);
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
-  await page.clock.install({time: new Date('2026-10-01T12:00:00Z')});
+  await page.clock.install({time: new Date('2026-10-10T12:00:00Z')});
   await page.goto('/');
-  await page.clock.pauseAt(new Date('2026-10-01T12:00:02Z'));
+  await page.clock.pauseAt(new Date('2026-10-10T12:00:02Z'));
   await page.locator('#start-button').click();
   await expect(page.locator('#game')).toBeVisible();
 }

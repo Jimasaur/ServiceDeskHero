@@ -2,9 +2,9 @@ import {test,expect} from '@playwright/test';
 import {TICKETS} from '../js/rush-tickets.js';
 async function boot(page,viewport){await page.setViewportSize(viewport);
   await page.route('**/*',r=>new URL(r.request().url()).hostname==='127.0.0.1'?r.continue():r.abort());
-  await page.clock.install({time:new Date('2026-10-01T12:00:00Z')});
+  await page.clock.install({time:new Date('2026-10-10T12:00:00Z')});
   await page.goto('/');
-  await page.clock.pauseAt(new Date('2026-10-01T12:00:02Z'));}
+  await page.clock.pauseAt(new Date('2026-10-10T12:00:02Z'));}
 async function tab(page,id,filter='active'){await page.locator(`[data-desk-tab="${id}"]`).click();
   await page.locator(`[data-desk-filter="${filter}"]`).click();}
 async function home(page){await page.locator('#pause-button').click();
