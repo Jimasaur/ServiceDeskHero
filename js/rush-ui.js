@@ -1,5 +1,8 @@
 import { createGame, advance, takeAction, selectTicket, drainEvents, getRank, acknowledgeTicket, TOTAL_NORMAL, ACTIONS, INVESTIGATIONS, investigateTicket, skipIdle, startProject, cancelWork, PROJECT_ACTIONS, setTicketHeld, setProjectHeld, DUNGEON_STATS, DUNGEON_SKILLS, DUNGEON_GEAR, DUNGEON_FLOORS, chooseDungeonStat, chooseDungeonSkill, chooseDungeonGear, dungeonSummary, dungeonSnapshot, dungeonEffects, finishDungeon, actionSeconds, investigationSeconds, projectSeconds } from './rush-engine.js';
 import { createLife, inboxFor, chooseMessage, endWorkday, homeOptions, chooseEvening, chooseConversation, beginNextDay } from './rush-life.js';
+import {MANAGERS,CAREER_PATHS,chooseCareerPath,careerEffects,careerFavor,settleCareer} from './rush-career.js';
+import {readCheckpoint,writeCheckpoint} from './rush-campaign-save.js';
+let campaignIdentity=null;let campaignDisk;try{campaignDisk=readCheckpoint(localStorage);}catch{campaignDisk={raw:null,value:null,error:'Local storage unavailable.'};}
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STORE = 'sdh_contact_v3';
@@ -34,7 +37,7 @@ function beep(kind) {
 function formatSla(seconds) { const total=Math.max(0,Math.ceil(seconds)); return `${Math.floor(total/60)}:${String(total%60).padStart(2,'0')}`; }
 function renderSound() { $('sound-button').textContent = sound ? 'Sound on' : 'Sound off'; $('sound-button').setAttribute('aria-pressed', String(sound)); $('sound-button').setAttribute('aria-label', sound ? 'Disable sound' : 'Enable sound'); }
 function renderLobby() {
-  const best = validBest(`dungeon-${classId}`);
+  const best = validBest(`dungeon-career-1-${classId}`);
   $('best-label').textContent = `Local best: ${best ? best.toLocaleString() : '—'}`;
   renderStartingStats();
   $('daily-label').textContent = `DAILY SHIFT · ${today.slice(5).replace('-', '/')}`;
@@ -103,10 +106,11 @@ function handleEvents() {
 }
 function start(nextDay = null) {
   morningBriefing = nextDay?.briefing ? [...nextDay.briefing] : [];
+  if (!nextDay) campaignIdentity=crypto.randomUUID();
   if (!nextDay) life = createLife(`contact-v3-${new Date().toISOString().slice(0,10)}`);
   today = new Date().toISOString().slice(0,10); dailySeed = `contact-v3-${today}`;
-  game = createGame(nextDay ? `${dailySeed}-day${life.day}` : dailySeed, relaxed, classId, nextDay ? {day:life.day,dungeonCarry:nextDay.dungeonCarry} : {stats:startingStats,day:1});
-  if(nextDay){game.morale=nextDay.morale;game.assists=nextDay.assists;}  activeDeskTab=stream(game.queue[0]);lifecycleFilter='active';tabSelection={};unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()};pulseUntil={}; $('evidence-drawer').open=false; resultRecorded = false; lastCaseId = ''; interactionView = 'fix'; lastTicketKey = ''; lastQueueKey = ''; feed = []; pointerActionTicket = null;
+  game = createGame(nextDay ? `${life.seed}-day${life.day}` : dailySeed, relaxed, classId, nextDay ? {day:life.day,dungeonCarry:nextDay.dungeonCarry,career:true,careerCarry:nextDay.careerCarry,aptitude:nextDay.aptitude} : {stats:startingStats,day:1,career:true,aptitude:$('architecture-aptitude').value});
+  if(nextDay){game.morale=nextDay.morale;game.assists=Math.min(4,nextDay.assists+careerEffects(game).assist);}  activeDeskTab=stream(game.queue[0]);lifecycleFilter='active';tabSelection={};unread={inc:new Set(),req:new Set(),projects:new Set(),ktlo:new Set()};pulseUntil={}; $('evidence-drawer').open=false; resultRecorded = false; lastCaseId = ''; interactionView = 'fix'; lastTicketKey = ''; lastQueueKey = ''; feed = []; pointerActionTicket = null;
   $('chuck-message').textContent = '“Welcome, replaceable asset. Your suffering has been marked P3.”';
   clearTimeout(achievementTimer); $('achievement-banner').hidden = true; $('earned-achievements').innerHTML = '';
   $('score-pop').textContent = ''; $('share-status').textContent = ''; $('share-fallback').hidden = true;
@@ -121,8 +125,8 @@ function render() {
   if (!game || game.status === 'finished') return;
   const focusedInquiry = document.activeElement?.dataset.inquiry;
   const progress = game.completedNormal + game.bossesDefeated + game.bossesMissed;
-  $('time').textContent = `${progress} / ${TOTAL_NORMAL + 2}`;
-  $('time-fill').style.width = `${100 * progress / (TOTAL_NORMAL + 2)}%`;
+  $('time').textContent = `${progress} / ${TOTAL_NORMAL + Object.keys(game.bossStatus).length}`;
+  $('time-fill').style.width = `${100 * progress / (TOTAL_NORMAL + Object.keys(game.bossStatus).length)}%`;
   $('score').textContent = game.score.toLocaleString(); $('streak').innerHTML = `${game.streak}<span>×</span>`;
   $('streak-note').textContent = game.streak ? `+${Math.min(game.streak,5)*25} next fix` : 'Make it stick';
   $('morale-number').textContent = `${game.morale}%`; $('morale-fill').style.width = `${game.morale}%`;
@@ -255,7 +259,7 @@ function renderProjects(){
     const labels={test:'Run compatibility test',release:'Release verified change',unsafeRelease:'Release without testing',remediate:'Roll back and test',defer:'Defer safely',hold:'Hold project',resume:'Resume project'};
     const button=(p,action)=>`<button data-project="${p.id}" data-project-action="${action}" class="${action==='unsafeRelease'?'risky-project':''}">${labels[action]}${PROJECT_ACTIONS[action]?` · ${projectSeconds(game,action)}s`:''}</button>`;
     const projects=game.projects.filter(p=>lifecycleFilter==='resolved'?closedProject(p):!closedProject(p)&&!!p.held===(lifecycleFilter==='hold'));
-    $('projects').innerHTML=projects.map(p=>{const locked=game.completedNormal<p.unlockAfter,risk=game.risks.find(r=>r.projectId===p.id&&r.status==='pending');const options=locked||closedProject(p)?[]:p.held?['resume']:risk?[]:p.tested?['release','defer','hold']:['test','unsafeRelease','defer','hold'];return `<article class="project-card"><h3>${escape(p.title)}</h3><p>${escape(p.description)}</p><span class="project-state">${locked?`Available after ${p.unlockAfter} routine cases`:p.held?'ON HOLD':p.status==='pending'?(p.tested?'Test passed · ready':'Awaiting testing'):p.status==='released'?'RISK ACTIVE · open KTLO':p.status==='deferred'?'Safely deferred':p.incidentId?(p.incidentOutcome==='recovered'?'Incident recovered – release needs retesting':p.incidentOutcome==='handed-off'?'Recovery handed off – restoration pending':'Escalated to INC – recovery required'):'Completed'}</span>${p.tested?`<p class="evidence-fact">${escape(p.finding)}</p>`:''}<div class="project-actions">${options.map(a=>button(p,a)).join('')}${risk?'<button data-open-ktlo>Open KTLO prevention task</button>':''}</div></article>`;}).join('');
+    $('projects').innerHTML=projects.map(p=>{const locked=game.completedNormal<p.unlockAfter,risk=game.risks.find(r=>r.projectId===p.id&&r.status==='pending');const options=locked||closedProject(p)?[]:p.held?['resume']:risk?[]:p.tested?['release','defer','hold']:['test','unsafeRelease','defer','hold'];return `<article class="project-card"><h3>${escape(p.title)}</h3><p>${escape(p.description)}</p>${game.career?`<p>Design domain: ${escape(p.domain)} · initial defect odds ${Math.round(p.defectProbability*100)}%. A quick release saves ${Math.round((projectSeconds(game,'release')-projectSeconds(game,'unsafeRelease'))*1000)/1000} seconds versus release alone, or ${Math.round((projectSeconds(game,'test')+projectSeconds(game,'release')-projectSeconds(game,'unsafeRelease'))*1000)/1000} including the skipped test. Clean shortcuts earn +350; defective ones require recovery. Tests reveal and correct seeded defects.</p>`:''}<span class="project-state">${locked?`Available after ${p.unlockAfter} routine cases`:p.held?'ON HOLD':p.status==='pending'?(p.tested?'Test passed · ready':'Awaiting testing'):p.status==='released'?'RISK ACTIVE · open KTLO':p.status==='deferred'?'Safely deferred':p.incidentId?(p.incidentOutcome==='recovered'?'Incident recovered – release needs retesting':p.incidentOutcome==='handed-off'?'Recovery handed off – restoration pending':'Escalated to INC – recovery required'):'Completed'}</span>${p.tested?`<p class="evidence-fact">${escape(p.finding)}</p>`:''}<div class="project-actions">${options.map(a=>button(p,a)).join('')}${risk?'<button data-open-ktlo>Open KTLO prevention task</button>':''}</div></article>`;}).join('');
     $('risk-register').innerHTML=risks.map(r=>`<article class="risk-card"><strong>${r.status==='pending'?'Incident risk':r.status==='prevented'?'Prevented':'Escalated to INC'} <span data-risk-time="${r.id}"></span></strong><p>${escape(r.cause)}</p>${r.status==='pending'?(r.projectId?`<div class="project-actions">${button(game.projects.find(p=>p.id===r.projectId),'remediate')}</div>`:`<button data-open-case="${r.sourceTicketId}">Correct the originating case</button>`):'<p>This risk is closed. Check INC resolved history for any resulting incident.</p>'}</article>`).join('');
     $('task-empty').hidden=(isKtlo?risks:projects).length>0;$('task-empty').textContent=isKtlo?'No prevention work in this view. Tested projects keep the lights on.':'No projects in this status. Check Active or Hold.';
     if(focus)document.querySelector(`[data-project="${CSS.escape(focus)}"][data-project-action="${CSS.escape(focusAction)}"]`)?.focus({preventScroll:true});
@@ -285,13 +289,14 @@ function finish(quit = false) {
   if (quit) { game.status = 'finished'; game.work = null; game.bonus = 0; finishDungeon(game); }
   if ($('pause-dialog').open) $('pause-dialog').close();
   clearTimeout(toastTimer); $('outcome').classList.remove('visible');
-  const rank = getRank(game), bestKey = `dungeon-${classId}`;
+  const rank = getRank(game), bestKey = `dungeon-career-1-${classId}`;
   const isBest = !quit && game.score > validBest(bestKey);
   if (isBest) { saved[bestKey] = game.score; save(); }
   $('result-title').textContent = quit ? 'Clocked out early' : rank.title;
   $('result-line').textContent = quit ? 'Sometimes the correct escalation is a break.' : rank.line;
   $('result-status').textContent = quit ? 'SHIFT ENDED EARLY' : game.morale > 0 ? (game.completion==='practice' ? 'PRACTICE COMPLETE' : 'SHIFT COMPLETE') : 'MORALE HAS LEFT THE CHAT';
   $('result-mode').textContent = `DAY ${life.day} · FLOOR ${game.dungeon.floor}`;
+  settleCareer(game);
   endWorkday(life,game);
   renderDungeonRecap();
   $('go-home-button').hidden=false;
@@ -299,7 +304,7 @@ function finish(quit = false) {
   $('result-fixed').textContent = game.fixes; $('result-streak').textContent = game.bestStreak; $('result-morale').textContent = `${game.morale}%`;
   $('result-breakdown').textContent = `${game.patches} workarounds · ${game.assisted} assists · ${game.missed} missed · ${game.wrong} wrong moves. Morale bonus: +${game.bonus || 0}`;
   $('result-achievements').innerHTML = (game.achievements || []).map(a=>`<div><span>✦</span><strong>${escape(a.title)}</strong><span>+${a.points}</span></div>`).join('');
-  $('result-breakdown').textContent += ` Bosses defeated: ${game.bossesDefeated || 0}/2. Incidents: ${game.incidentsResolved} recovered · ${game.incidentsMissed} missed · ${game.incidentsPrevented} prevented. Projects: ${game.projectsCompleted} completed · ${game.projectPoints} pts.`;
+  $('result-breakdown').textContent += ` Bosses defeated: ${game.bossesDefeated || 0}/${Object.keys(game.bossStatus).length}. Incidents: ${game.incidentsResolved} recovered · ${game.incidentsMissed} missed · ${game.incidentsPrevented} prevented. Projects: ${game.projectsCompleted} completed · ${game.projectPoints} pts.`;
   $('result-tip').textContent = game.patches >= 3 ? 'A workaround can help once, but it does not reset the SLA. Resolve the underlying issue.' : game.missed >= 3 ? 'Sev 3 clocks wait for acknowledgement. Later Sev 1 clocks begin as soon as the incident is reported.' : game.wrong >= 2 ? 'A confident user is not a diagnostic tool. Ask questions or run a check before your next guess.' : 'Tested project releases earn +450. Correcting a self-created risk avoids impact but earns no bonus. Unsafe-project Sev 2 recovery earns +200; manufactured boss incidents earn no recovery points. Successful recovery restores morale.';
   $('share-status').textContent = ''; $('share-fallback').hidden = true;
   show('results'); $('results').focus({preventScroll:true}); window.scrollTo({top:0,behavior:'instant'}); beep('end');
@@ -359,7 +364,7 @@ document.addEventListener('keydown',e=>{
 });
 $('share-button').addEventListener('click',async()=>{
   if (!game) return;
-  const text=`Service Desk Hero · First Shift\n${game.score.toLocaleString()} points · ${game.fixes} lasting fixes · ${game.bestStreak} best streak\n${game.bossesDefeated || 0}/2 bosses · ${classId === 'faker' ? 'Fake It Till You Make It' : 'Root Cause Ranger'}
+  const text=`Service Desk Hero · First Shift\n${game.score.toLocaleString()} points · ${game.fixes} lasting fixes · ${game.bestStreak} best streak\n${game.bossesDefeated || 0}/${Object.keys(game.bossStatus).length} bosses · ${classId === 'faker' ? 'Fake It Till You Make It' : 'Root Cause Ranger'}
 ${today} daily shift. Can you beat my help desk?`;
   try {if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(text);$('share-status').textContent='Challenge copied. Send it to your on-call group.';}
   catch {$('share-fallback').value=text;$('share-fallback').hidden=false;$('share-fallback').focus();$('share-fallback').select();$('share-status').textContent='Select and copy your challenge text above.';}
@@ -383,6 +388,7 @@ function renderCharacter(){
   if(!game)return;
   const d=game.dungeon, summary=dungeonSummary(game), focused=document.activeElement?.dataset;
   const focusKey=focused?.levelStat?['levelStat',focused.levelStat]:focused?.skill?['skill',focused.skill]:focused?.gear?['gear',focused.gear]:null;
+  $('career-panel').innerHTML=`<p>${game.career.promotions}/3 promotions; ${game.career.endorsements} retained endorsements. Favor is capped at four per manager per shift; a defeated finale is required to retain it.</p>${MANAGERS.map((m,i)=>`<p><strong>${escape(m.name)} — ${m.preference}</strong>: ${careerFavor(game,i)}/4 shift favor, ${game.career.relationships[i]} retained / ${m.target} required. ${escape(m.motto)}</p>`).join('')}<p>Choose one lasting path; its unlock becomes active after your first promotion.</p>${game.career.consequences.length?`<details><summary>Retained recovery consequences</summary>${game.career.consequences.map(c=>`<p>${escape(c.text)}</p>`).join('')}</details>`:''}${CAREER_PATHS.map(p=>`<button data-career-path="${p.id}" aria-pressed="${game.career.path===p.id}" ${game.career.path?'disabled':''}><strong>${escape(p.name)}</strong><small>${escape(p.description)}</small></button>`).join('')}`;
   $('dungeon-floor').textContent=`Floor ${d.floor}/3`;$('dungeon-level').textContent=`Level ${d.level}`;$('dungeon-xp').textContent=`${d.xp} XP`;
   $('character-class').textContent=`${classId==='engineer'?'Root Cause Ranger':'Fake It Till You Make It'} · Day ${life.day}. Build choices carry into later floors and tomorrow. No stat locks a correct fix.`;
   $('floor-map').innerHTML=DUNGEON_FLOORS.map(f=>`<div class="floor-node ${d.floor===f.id?'current':d.floor>f.id?'cleared':''}" ${d.floor===f.id?'aria-current="step"':''}><span>${f.id}</span><strong>${escape(f.name)}</strong><small>${f.afterNormal===0?'Entry':`${f.afterNormal} routine cases handled`}</small></div>`).join('');
@@ -412,7 +418,8 @@ function openCharacter(){
   if(!game||game.status!=='playing')return;
   advance(game,Math.max(0,(performance.now()-previousTime)/1000));handleEvents();
   if(game.status!=='playing')return;
-  game.status='paused';render();renderCharacter();$('character-dialog').showModal();$('close-character-button').focus();
+  try{renderCharacter();game.status='paused';render();$('character-dialog').showModal();$('close-character-button').focus();}
+  catch{if($('character-dialog').open)$('character-dialog').close();game.status='playing';previousTime=performance.now();render();toast('Character sheet could not open. Work continues; your retained save is unchanged.',true);}
 }
 function closeCharacter(){
   if(!$('character-dialog').open)return;
@@ -422,7 +429,7 @@ function renderDungeonRecap(){
   const d=dungeonSummary(game);
   const names=list=>list.length?list.map(x=>x.name||x.label||x.id||x).join(', '):'None selected';
   const reactions=(d.bossReactions||[]).map(x=>typeof x==='string'?x:x.text||x.description||'').filter(Boolean);
-  $('dungeon-summary').innerHTML=`<h2>Your run carries on</h2><p>Day ${life.day} · Floor ${d.floor}/3 · Level ${d.level} · ${d.xp} XP</p><p>${DUNGEON_STATS.map(x=>`${escape(x.name)} ${d.stats[x.key]}`).join(' · ')}</p><p><strong>Skills:</strong> ${escape(names(d.skills))}</p><p><strong>Equipment:</strong> ${escape(names(d.gear))}</p>${reactions.length?`<details><summary>How the bosses reacted</summary>${reactions.map(t=>`<p>${escape(t)}</p>`).join('')}</details>`:''}${(d.projectLog||[]).length?`<details><summary>Project decisions</summary>${d.projectLog.map(p=>`<p>${escape(p.text)}</p>`).join('')}</details>`:''}<p>Stats, skills, and equipment stay with you tomorrow. Tonight’s choices add their own consequences. A new run starts fresh.</p>`;
+  $('dungeon-summary').innerHTML=`<h2>Your run carries on</h2><p>Career: ${game.career.promotions}/3 promotions · ${escape(game.career.path||'path not chosen')} · ${game.career.endorsements} retained endorsements. ${game.career.history.at(-1)?.gained?'Promotion earned! Your path unlock is active tomorrow.':'Managers retain favor only from defeated finales. A development day remains valid.'}</p><p>Day ${life.day} · Floor ${d.floor}/3 · Level ${d.level} · ${d.xp} XP</p><p>${DUNGEON_STATS.map(x=>`${escape(x.name)} ${d.stats[x.key]}`).join(' · ')}</p><p><strong>Skills:</strong> ${escape(names(d.skills))}</p><p><strong>Equipment:</strong> ${escape(names(d.gear))}</p>${reactions.length?`<details><summary>How the bosses reacted</summary>${reactions.map(t=>`<p>${escape(t)}</p>`).join('')}</details>`:''}${(d.projectLog||[]).length?`<details><summary>Project decisions</summary>${d.projectLog.map(p=>`<p>${escape(p.text)}</p>`).join('')}</details>`:''}<p>Stats, skills, and equipment stay with you tomorrow. Tonight’s choices add their own consequences. A new run starts fresh.</p>`;
 }
 function renderInbox(){
   const messages=inboxFor(life);
@@ -440,6 +447,7 @@ function renderHome(){
   $('conversation-title').textContent=c.title;$('conversation-context').textContent=c.context;$('conversation-prompt').textContent=c.prompt;
   $('conversation-options').innerHTML=c.choices.map(choice=>`<button data-conversation="${choice.id}" aria-pressed="${life.choices.conversation===choice.id}" class="life-choice" ${!options.activityResult||options.conversationResult?'disabled':''}><strong>${escape(choice.label)}</strong><small>${escape(choice.effect)}</small></button>`).join('');
   $('conversation-result').textContent=options.conversationResult||'';
+  $('save-campaign').disabled=life.stage!=='ready';
   $('next-day-button').disabled=life.stage!=='ready';
   $('next-day-button').textContent=`Begin day ${life.day+1}`;
   $('tomorrow-preview').textContent=life.stage==='ready'?'Tomorrow keeps your build. Energy, stress, and trust shape your opening morale and teammate support. See the morning inbox for the other side of tonight.':'Choose one evening activity, then respond to Rowan. Neither work nor perfect answers are required to continue.';
@@ -456,7 +464,19 @@ $('inbox-messages').addEventListener('click',e=>{const b=e.target.closest('[data
 $('go-home-button').addEventListener('click',()=>{renderHome();show('home');$('home').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});});
 $('evening-options').addEventListener('click',e=>{const b=e.target.closest('[data-evening]');if(b&&chooseEvening(life,b.dataset.evening)){renderHome();$('conversation-options').querySelector('button:not(:disabled)')?.focus({preventScroll:true});}});
 $('conversation-options').addEventListener('click',e=>{const b=e.target.closest('[data-conversation]');if(b&&chooseConversation(life,b.dataset.conversation)){renderHome();$('next-day-button').focus({preventScroll:true});}});
-$('next-day-button').addEventListener('click',()=>{const carriedBuild=dungeonSnapshot(game),carry=beginNextDay(life);if(carry)start({...carry,dungeonCarry:carriedBuild});});
+$('next-day-button').addEventListener('click',()=>{const carriedBuild=dungeonSnapshot(game),carry=beginNextDay(life);if(carry)start({...carry,dungeonCarry:carriedBuild,careerCarry:game.career,aptitude:game.aptitude});});
 $('home-menu-button').addEventListener('click',()=>{show('lobby');game=null;renderLobby();$('start-button').focus();});
 
+$('character-dialog').addEventListener('click',e=>{const b=e.target.closest('[data-career-path]');if(b&&chooseCareerPath(game,b.dataset.careerPath)){lastTicketKey='';$('projects').dataset.key='';renderCharacter();render();}});
+$('resume-campaign').hidden=!campaignDisk.value;
+$('campaign-status').textContent=campaignDisk.error|| (campaignDisk.value?`Saved morning: day ${campaignDisk.value.life.day}. Current shifts restart; completed-day awards and relationships carry forward.`:'Morning checkpoints only. No cloud account or mid-shift timer resume. Existing Career saves are separate.');
+$('resume-campaign').addEventListener('click',()=>{try{const fresh=readCheckpoint(localStorage);if(!fresh.value)throw new Error(fresh.error||'No saved morning.');campaignDisk=fresh;campaignIdentity=fresh.value.identity;life=structuredClone(fresh.value.life);classId=fresh.value.classId;start({...structuredClone(fresh.value.carry),aptitude:fresh.value.aptitude});}catch(e){$('campaign-status').textContent=e.message;}});
+$('save-campaign').addEventListener('click',async()=>{
+  if(life.stage!=='ready')return;
+  if(campaignDisk.raw!==null&&(!campaignDisk.value||campaignDisk.value.identity!==campaignIdentity)&&!window.confirm('Replace the retained campaign checkpoint? Choose Cancel to keep your existing data.'))return;
+  const nextLife=structuredClone(life),carry=beginNextDay(nextLife);
+  const value={schema:1,content:'dungeon-career-1',identity:campaignIdentity,revision:(campaignDisk.value?.revision||0)+1,classId,aptitude:game.aptitude,life:nextLife,carry:{...carry,dungeonCarry:dungeonSnapshot(game),careerCarry:structuredClone(game.career)}};
+  const expected=campaignDisk.raw;$('save-campaign').disabled=true;
+  try{const raw=await writeCheckpoint(localStorage,navigator.locks,expected,value);campaignDisk={raw,value};$('campaign-save-status').textContent=`Day ${nextLife.day} morning saved. Reload restarts that shift; completed-day awards remain unique.`;$('resume-campaign').hidden=false;}catch(e){$('campaign-save-status').textContent=e.message;}finally{$('save-campaign').disabled=life.stage!=='ready';}
+});
 renderLobby();renderSound();requestAnimationFrame(frame);

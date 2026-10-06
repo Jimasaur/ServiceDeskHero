@@ -1,3 +1,4 @@
+import {careerEffects} from './rush-career.js';
 /** Deterministic character progression. No clocks, network, or browser state. */
 const freeze = value => {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
@@ -125,7 +126,7 @@ export function chooseDungeonGear(g,id) {
 export function dungeonEffects(g) {
   const stats=g.dungeon.stats,e={fixTime:-.08*stats.technical,diagnosticTime:-.1*stats.technical,projectTime:-.07*stats.technical,questionTime:-.12*stats.insight,moraleLoss:-.15*stats.composure,bluffBonus:15*stats.bullshit,bluffSeconds:3*stats.bullshit,bluffPower:stats.bullshit,bluffRecovery:2*stats.bullshit,bossBonus:0,testedBonus:0,recovery:0};
   for(const item of [...DUNGEON_SKILLS.filter(s=>g.dungeon.skills.includes(s.id)),...DUNGEON_GEAR.filter(s=>g.dungeon.gear.includes(s.id))])for(const [key,value]of Object.entries(item.effects))e[key]=(e[key]||0)+value;
-  return e;
+  const career=careerEffects(g);e.projectTime+=career.projectTime;e.recovery+=career.recovery;return e;
 }
 export function scaledDungeonSeconds(g,base,effect) {
   if(!Number.isFinite(base))return null;
